@@ -1,4 +1,4 @@
-﻿# ==============================================
+# ==============================================
 # BlueMoon Building Management System - .gitignore
 # ==============================================
 
@@ -19,6 +19,9 @@ frontend/.env
 backend/.env.local
 backend/.env
 serviceAccountKey.json
+*serviceAccount*.json
+*firebase-adminsdk*.json
+backend/serviceAccountKey.json
 *.pem
 *.key
 

@@ -1,7 +1,10 @@
-# Environment variables
+# Environment variables & Firebase credentials
 .env.local
 .env
 .env.*.local
+serviceAccountKey.json
+*serviceAccount*.json
+*firebase-adminsdk*.json
 
 # Node modules
 node_modules/

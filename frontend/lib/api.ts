@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+let rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').trim().replace(/\/+$/, '');
+if (!rawApiUrl.endsWith('/api')) {
+  rawApiUrl += '/api';
+}
+const API_BASE_URL = rawApiUrl;
 
 /**
  * Get authentication token from current session
