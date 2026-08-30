@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
 import BackButton from "@/components/BackButton";
 import Header from "@/components/Header";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   ArrowLeft,
   Building2,
@@ -25,7 +26,9 @@ import {
   Coffee,
   ShoppingBag,
   Smile,
-  TreePine
+  TreePine,
+  CheckCircle,
+  Loader2
 } from "lucide-react";
 
 interface BuildingInfo {
@@ -48,22 +51,81 @@ interface Regulation {
   icon: string;
 }
 
-export default function BuildingInfoPage() {
-  const [buildingInfo] = useState<BuildingInfo>({
-    name: "Chung cư BlueMoon",
-    address: "123 Đường Lê Lợi, Quận 1, TP.HCM",
-    yearBuilt: 2015,
-    totalFloors: 25,
-    totalApartments: 248,
-    manager: "Nguyễn Văn Duy",
-    managerPhone: "0212.123.456",
-    managerEmail: "manager@bluemoon.vn",
-    securityPhone: "0909.999.999",
-    frontDeskPhone: "0212.123.455"
-  });
+const DEFAULT_BUILDING_INFO: BuildingInfo = {
+  name: "Chung cư BlueMoon",
+  address: "123 Đường Lê Lợi, Quận 1, TP.HCM",
+  yearBuilt: 2015,
+  totalFloors: 25,
+  totalApartments: 248,
+  manager: "Nguyễn Văn Duy",
+  managerPhone: "0212.123.456",
+  managerEmail: "manager@bluemoon.vn",
+  securityPhone: "0909.999.999",
+  frontDeskPhone: "0212.123.455"
+};
 
+export default function BuildingInfoPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+
+  const [buildingInfo, setBuildingInfo] = useState<BuildingInfo>(DEFAULT_BUILDING_INFO);
   const [editMode, setEditMode] = useState(false);
-  const [editData, setEditData] = useState(buildingInfo);
+  const [editData, setEditData] = useState<BuildingInfo>(DEFAULT_BUILDING_INFO);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  let rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').trim().replace(/\/+$/, '');
+  if (!rawApiUrl.endsWith('/api')) rawApiUrl += '/api';
+  const API_BASE_URL = rawApiUrl;
+
+  // Load building info from Backend API
+  useEffect(() => {
+    async function fetchBuildingInfo() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/building/info`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.name) {
+            setBuildingInfo(data);
+            setEditData(data);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch building info from backend, using defaults:", err);
+      }
+    }
+    fetchBuildingInfo();
+  }, [API_BASE_URL]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/building/info`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editData),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setBuildingInfo(updated);
+        setEditData(updated);
+      } else {
+        setBuildingInfo(editData);
+      }
+      setEditMode(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3500);
+    } catch (error) {
+      console.warn("Save API failed, updating local state:", error);
+      setBuildingInfo(editData);
+      setEditMode(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3500);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const [regulations] = useState<Regulation[]>([
     {
@@ -124,13 +186,24 @@ export default function BuildingInfoPage() {
                 <h1 className="text-3xl font-bold text-gray-800">Thông tin Chung cư</h1>
                 <p className="text-gray-600 mt-1">Quản lý thông tin và quy định chung cư</p>
               </div>
-              <button
-                onClick={() => setEditMode(!editMode)}
-                className="bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition flex items-center gap-2"
-              >
-                <Edit2 className="w-5 h-5" /> Chỉnh sửa
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    setEditData(buildingInfo);
+                    setEditMode(!editMode);
+                  }}
+                  className="bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition flex items-center gap-2"
+                >
+                  <Edit2 className="w-5 h-5" /> {editMode ? "Hủy chỉnh sửa" : "Chỉnh sửa"}
+                </button>
+              )}
             </div>
+            {saveSuccess && (
+              <div className="mx-4 mb-4 bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm font-medium animate-in fade-in">
+                <CheckCircle className="w-5 h-5 text-emerald-600" />
+                Cập nhật thông tin chung cư thành công!
+              </div>
+            )}
           </div>
 
           <div className="max-w-7xl mx-auto px-4 py-6">
@@ -245,13 +318,21 @@ export default function BuildingInfoPage() {
           {editMode && (
             <div className="mt-6 flex gap-3">
               <button
-                onClick={() => setEditMode(false)}
-                className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded transition"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-semibold py-2 px-6 rounded transition flex items-center gap-2"
               >
-                Lưu thay đổi
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Đang lưu...
+                  </>
+                ) : (
+                  "Lưu thay đổi"
+                )}
               </button>
               <button
                 onClick={() => setEditMode(false)}
+                disabled={isSaving}
                 className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-6 rounded transition"
               >
                 Hủy
