@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Removed broad color override to allow component-level Tailwind utilities
+  to control text color. A global !important color was forcing dark text
+  even on dark backgrounds when the page sets a dark background but the
+  theme variable (--foreground) remained the light-mode value. Use
+  explicit `text-...` utilities in components for predictable results. */
+
+/* Force full visibility for main app content to avoid accidental dimming/blur */
+.app-main {
+  opacity: 1 !important;
+  filter: none !important;
+}
+.app-main * {
+  opacity: 1 !important;
+}
+
+/* Ensure white backgrounds inside app-main are fully opaque */
+.app-main .bg-white {
+  --tw-bg-opacity: 1 !important;
+  background-color: rgba(255,255,255,var(--tw-bg-opacity)) !important;
+}
