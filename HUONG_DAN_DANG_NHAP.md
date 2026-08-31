@@ -14,9 +14,6 @@ Tài liệu này hướng dẫn cách lấy và quản lý thông tin đăng nh�
 
 ### 🔑 Cách khởi tạo hoặc lấy thông tin tài khoản Admin:
 1. Mở file `backend/tests/createAdmin.js` để xem thông tin tài khoản Admin mặc định được thiết lập trong mã nguồn:
-   - **Email:** `minh512@bluemoon.com`
-   - **Mật khẩu (Password):** `minh@512`
-   - **Quyền (Role):** `admin`
 2. Để tự động tạo hoặc đồng bộ lại tài khoản Admin này vào cơ sở dữ liệu Supabase, mở Terminal và chạy:
    ```powershell
    cd backend
