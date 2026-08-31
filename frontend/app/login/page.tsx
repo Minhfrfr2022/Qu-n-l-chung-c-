@@ -215,7 +215,6 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-sm text-gray-600 mt-6">
-          © 2025 BlueMoon Group 27. All rights reserved.
         </p>
       </div>
     </div>
