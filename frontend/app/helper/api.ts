@@ -1,6 +1,19 @@
 import axios from "axios";
 import { vehicle_type, request_type, filterType } from "./type";
-import {dateConvert} from "./utils";
+import { dateConvert } from "./utils";
+import { supabase } from "@/lib/supabase";
+
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api").trim().replace(/\/+$/, '');
+
+const getAuthHeaders = async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch (e) {
+    return {};
+  }
+};
 
 const veh_type2 = ["car", "bike", "motorbike"];
 const apiToStateKey: Record<string, keyof vehicle_type> = {
@@ -16,32 +29,34 @@ export class ApiCall {
             if(apt_id == "" || apt_id == null) {
                 throw new Error("No apt found");
             }
-            const res = await axios.get("http://localhost:3001/api/vehicles/query-by-apt", {      
+            const headers = await getAuthHeaders();
+            const res = await axios.get(`${API_BASE_URL}/vehicles/query-by-apt`, {      
                 params: {
                     apt_id: apt_id
-                }
+                },
+                headers
             });
             return res;
         }
-        catch(error) {
+        catch(error: any) {
             throw new Error(error.message);
         }
     }
+
     async query_request_by_apt(apt_id: string) {
         try {
             if(apt_id == "" || apt_id == null) {
                 throw new Error("No apt found");
             }
-            //console.log(apt_id);
-            const res = await axios.get("http://localhost:3001/api/vehicles/query-request-by-apt", {      
+            const headers = await getAuthHeaders();
+            const res = await axios.get(`${API_BASE_URL}/vehicles/query-request-by-apt`, {      
                 params: {
                     apt_id: apt_id,
-                }
+                },
+                headers
             });
-            //console.log(apt_id);
-            //console.log("Response:", res.data);
             return res;
-        } catch (err) {
+        } catch (err: any) {
             console.log(err.message);
         }
     }
@@ -49,33 +64,31 @@ export class ApiCall {
     async count_each_type_with_apt(apt_id: string, type: string) {
         try {
             if (!apt_id) throw new Error("No apt found");
-            const res = await axios.get("http://localhost:3001/api/vehicles/count-by-apt-type", {
-                params: { apt_id: apt_id, type: type }
+            const headers = await getAuthHeaders();
+            const res = await axios.get(`${API_BASE_URL}/vehicles/count-by-apt-type`, {
+                params: { apt_id: apt_id, type: type },
+                headers
             });
-            console.log(type);
-            console.log(res.data.count);
             return res.data.count;
         }
-        catch(error) {
+        catch(error: any) {
             throw new Error(error.message);
         }
-        
     }
 
     async count_each_type(type: string) {
         try {
             if (!type) throw new Error("No apt found");
-            const res = await axios.get("http://localhost:3001/api/vehicles/count-all-by-type", {
-                params: { type: type }
+            const headers = await getAuthHeaders();
+            const res = await axios.get(`${API_BASE_URL}/vehicles/count-all-by-type`, {
+                params: { type: type },
+                headers
             });
-            console.log(type);
-            console.log(res.data.count);
             return res.data.count;
         }
-        catch(error) {
+        catch(error: any) {
             throw new Error(error.message);
         }
-        
     }
 
     async request_new_vehicle(
@@ -99,53 +112,56 @@ export class ApiCall {
                 requestData.created_by = created_by;
             }
             
-            const res = await axios.post("http://localhost:3001/api/vehicles/insert-request", requestData);
+            const headers = await getAuthHeaders();
+            const res = await axios.post(`${API_BASE_URL}/vehicles/insert-request`, requestData, { headers });
             return res.data;
         }
-        catch(error) {
+        catch(error: any) {
             console.log(error.message);
             throw new Error(error.message);
         }
     }
 
-    async query_all_request(page_number, page_size) {
+    async query_all_request(page_number: number, page_size: number) {
         try {
-            const res = await axios.get("http://localhost:3001/api/vehicles/query-all-request", {      
+            const headers = await getAuthHeaders();
+            const res = await axios.get(`${API_BASE_URL}/vehicles/query-all-request`, {      
                 params: {
                     page_number,
                     page_size
-                }
+                },
+                headers
             });
-            //console.log("Response:", dateConvert(res.data.result.data[0].created_at));
-       
             return res.data.result;
-        } catch (err) {
+        } catch (err: any) {
             console.log(err);
             throw new Error(err.message);
         }   
     }
 
-    async delete_request(number) {
+    async delete_request(number: string) {
         try {
-            const res = await axios.post("http://localhost:3001/api/vehicles/delete-request", {
+            const headers = await getAuthHeaders();
+            const res = await axios.post(`${API_BASE_URL}/vehicles/delete-request`, {
                 number
-            });
-            return res
+            }, { headers });
+            return res;
         }
-        catch(error) {
+        catch(error: any) {
             throw new Error(error.message);
         }
     } 
 
     async accept_request(request: request_type, monthly_fee?: number) {
         try {
-            const res = await axios.post("http://localhost:3001/api/vehicles/approve-request", {
+            const headers = await getAuthHeaders();
+            const res = await axios.post(`${API_BASE_URL}/vehicles/approve-request`, {
                 number: request.number,
                 monthly_fee: monthly_fee
-            });
+            }, { headers });
             return res;
         }
-        catch(error) {
+        catch(error: any) {
             console.log(error.message);
             throw new Error(error.message);
         }
@@ -153,93 +169,94 @@ export class ApiCall {
 
     async reject_request(number: string, rejection_reason?: string) {
         try {
-            const res = await axios.post("http://localhost:3001/api/vehicles/reject-request", {
+            const headers = await getAuthHeaders();
+            const res = await axios.post(`${API_BASE_URL}/vehicles/reject-request`, {
                 number: number,
                 rejection_reason: rejection_reason || 'No reason provided'
-            });
+            }, { headers });
             return res;
         }
-        catch(error) {
+        catch(error: any) {
             console.log(error.message);
             throw new Error(error.message);
         }
     }
 
-    async search_vehicles_with_filter(filter: filterType, page_number, page_size) {
+    async search_vehicles_with_filter(filter: filterType, page_number: number, page_size: number) {
         try {
-            const res = await axios.get("http://localhost:3001/api/vehicles/query-with-filter", {      
+            const headers = await getAuthHeaders();
+            const res = await axios.get(`${API_BASE_URL}/vehicles/query-with-filter`, {      
                 params: {
                     page_number: page_number,
                     page_size: page_size,
                     filter
-                }
+                },
+                headers
             });
-            console.log(res.data.result);
             return res.data.result;
         } 
-        catch (err) {
+        catch (err: any) {
             console.log(err.message);
             throw new Error(err.message);
         }
     }
 
-    async query_all_bill(owner, page_size, page_number) {
+    async query_all_bill(owner: string, page_size: number, page_number: number) {
         try {
-            const res = await axios.get("http://localhost:3001/api/bills/query-by-owner", {      
+            const headers = await getAuthHeaders();
+            const res = await axios.get(`${API_BASE_URL}/bills/query-by-owner`, {      
                 params: {
                     page_number,
                     page_size,
                     owner
-                }
+                },
+                headers
             });
-            console.log(res.data.result);
             return res.data.result;
-
-        } catch (err) {
+        } catch (err: any) {
             console.log(err);
             throw new Error(err.message);
         }
     }
 
-    async query_bill_with_filter(filter, page_number, page_size) {
+    async query_bill_with_filter(filter: any, page_number: number, page_size: number) {
          try {
             const params = {
                 page_number,
                 page_size,
                 filter: typeof filter === 'object' ? JSON.stringify(filter) : filter
             };
-            const res = await axios.get("http://localhost:3001/api/bills/query-with-filter", { params });
-            console.log(res.data.result);
+            const headers = await getAuthHeaders();
+            const res = await axios.get(`${API_BASE_URL}/bills/query-with-filter`, { params, headers });
             return res.data.result;
-
-        } catch (err) {
+        } catch (err: any) {
             console.log(err);
             throw new Error(err.message);
         }
     }
 
-    async reset_bill(apt_id, period = null) {
+    async reset_bill(apt_id: string, period = null) {
          try {
             const payload: any = { apt_id };
             if (period) payload.period = period;
-            const res = await axios.patch("http://localhost:3001/api/bills/reset", payload);
-            console.log("Response:", res.data);
+            const headers = await getAuthHeaders();
+            const res = await axios.patch(`${API_BASE_URL}/bills/reset`, payload, { headers });
             return res.data;
-        } catch (err) {
+        } catch (err: any) {
             console.log(err);
             throw new Error(err.message);
         }
     }
 
-    async update_bill(apt_id, bill_value) {
+    async update_bill(apt_id: string, bill_value: any) {
         try {
-            const res = await axios.patch("http://localhost:3001/api/bills/update", {      
+            const headers = await getAuthHeaders();
+            const res = await axios.patch(`${API_BASE_URL}/bills/update`, {      
                 apt_id,
                 bill: bill_value
-            });
-            console.log("Response:", res.data);
+            }, { headers });
             return res;
-        } catch (err) {
+        } catch (err: any) {
             console.log(err);
             throw new Error(err.message);
         }
@@ -247,23 +264,20 @@ export class ApiCall {
 
     async get_total_collected() {
         try {
-            const res = await axios.get("http://localhost:3001/api/bills/query-all-collected", {      
-            
-            });
-            console.log("Response:", res.data.data);
+            const headers = await getAuthHeaders();
+            const res = await axios.get(`${API_BASE_URL}/bills/query-all-collected`, { headers });
             return res.data.result;
         } catch (err) {
             console.log(err);
         }
     }
 
-    async collect_bill(apt_id, total) {
+    async collect_bill(apt_id: string, total: number, period = null) {
         try {
-            const res = await axios.post("http://localhost:3001/api/bills/collect-bill", {      
-                apt_id,
-                total
-            });
-            console.log("Response:", res.data);
+            const payload: any = { apt_id, total };
+            if (period) payload.period = period;
+            const headers = await getAuthHeaders();
+            const res = await axios.post(`${API_BASE_URL}/bills/collect-bill`, payload, { headers });
             return res;
         } catch (err) {
             console.log(err);
