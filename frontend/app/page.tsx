@@ -126,6 +126,7 @@ export default function Home() {
       gradient: "from-teal-500 to-teal-600",
       shadowColor: "shadow-teal-500/50",
       requiredRoles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.USER],
+      path: "/notifications",
     },
     {
       icon: UserCog,

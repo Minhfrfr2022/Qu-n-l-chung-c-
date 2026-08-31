@@ -7,7 +7,9 @@ import { useAuth } from "./AuthContext";
 import { requestFCMToken, onForegroundMessage } from "@/lib/firebase";
 import NotificationSettingsModal from "@/components/NotificationSettingsModal";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
+let rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api").trim().replace(/\/+$/, '');
+if (!rawApiUrl.endsWith('/api')) rawApiUrl += '/api';
+const API_BASE_URL = rawApiUrl;
 
 const defaultSettings: NotificationSettings = {
   bills: true,
@@ -174,7 +176,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         fetchNotifications();
       });
 
-      // 3. Network Offline-to-Online recovery listener
+      // 3. Periodic fallback poll every 8 seconds to ensure instant notification updates
+      const pollInterval = setInterval(() => {
+        fetchNotifications();
+      }, 8000);
+
+      // 4. Network Offline-to-Online recovery listener
       const handleOnline = () => {
         console.log("Network reconnected! Fetching latest notifications...");
         fetchNotifications();
@@ -184,6 +191,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       return () => {
         supabase.removeChannel(channel);
         if (unsubForeground) unsubForeground();
+        clearInterval(pollInterval);
         window.removeEventListener("online", handleOnline);
       };
     }

@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, AlertCircle, CheckCircle, Clock, Wrench, ChevronRight } from "lucide-react";
+import { Plus, AlertCircle, CheckCircle, Clock, Wrench, ChevronRight, Shield } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import BackButton from "@/components/BackButton";
 import Header from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
+import { UserRole } from "@/types/auth";
 import {
   MaintenanceRequest,
   MaintenanceStats,
@@ -28,6 +30,7 @@ interface FormData {
 
 export default function MaintenancePage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [stats, setStats] = useState<MaintenanceStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,9 +64,18 @@ export default function MaintenancePage() {
 
   useEffect(() => {
     if (user) {
+      if (user.role === UserRole.ADMIN || user.role === UserRole.MANAGER) {
+        router.replace("/admin/maintenance");
+        return;
+      }
+      setFormData((prev) => ({
+        ...prev,
+        apt_id: prev.apt_id || user.apartmentNumber || "",
+        resident_name: prev.resident_name || user.fullName || user.username || "",
+      }));
       fetchData();
     }
-  }, [user]);
+  }, [user, router]);
 
   const handleAddRequest = async () => {
     if (!formData.apt_id || !formData.resident_name || !formData.issue_description) {

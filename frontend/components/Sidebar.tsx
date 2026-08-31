@@ -15,7 +15,9 @@ import {
   Building2,
   BarChart3,
   TrendingUp,
-  Users
+  Users,
+  Wrench,
+  MessageSquare
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
@@ -28,6 +30,7 @@ export default function Sidebar() {
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", active: pathname === "/", path: "/" },
+    { icon: MessageSquare, label: "Thông báo & Góp ý", active: pathname === "/notifications", path: "/notifications" },
     { icon: Building2, label: "Danh sách hộ dân", active: pathname === "/apartment", path: "/apartment" },
     { icon: BarChart3, label: "Thống kê tài chính", active: pathname === "/financial", path: "/financial" },
     { icon: TrendingUp, label: "Phân tích tài chính", active: pathname === "/financial-stats", path: "/financial-stats" },
@@ -126,6 +129,25 @@ export default function Sidebar() {
                 <UserCheck className={`w-5 h-5 ${pathname === '/admin/visitors' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
                 <span className="text-sm font-medium flex-1 text-left">Quản lý khách</span>
                 {pathname === '/admin/visitors' && (
+                  <ChevronRight className="w-4 h-4 opacity-70" />
+                )}
+              </Link>
+
+              {/* Maintenance Management */}
+              <Link
+                href="/admin/maintenance"
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
+                  pathname === '/admin/maintenance'
+                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/50"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                {pathname === '/admin/maintenance' && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-red-400 rounded-r-full"></div>
+                )}
+                <Wrench className={`w-5 h-5 ${pathname === '/admin/maintenance' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
+                <span className="text-sm font-medium flex-1 text-left">Quản lý bảo trì</span>
+                {pathname === '/admin/maintenance' && (
                   <ChevronRight className="w-4 h-4 opacity-70" />
                 )}
               </Link>

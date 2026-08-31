@@ -1,4 +1,4 @@
-﻿const { firebaseAdmin, isFirebaseConfigured } = require('../config/firebase');
+const { firebaseAdmin, isFirebaseConfigured } = require('../config/firebase');
 const { supabaseAdmin } = require('../config/supabase');
 
 const PRIORITY = {
@@ -111,16 +111,19 @@ async function sendMulticastBatch(tokens, { title, body, icon, link, data }) {
  */
 async function sendPushToUser(userId, { type, title, message, link, metadata, category = CATEGORY.ANNOUNCEMENTS, priority = PRIORITY.IMPORTANT }) {
   try {
+    const validTypes = ['info', 'success', 'warning', 'error', 'announcement'];
+    const safeType = validTypes.includes(type) ? type : 'info';
+
     // 1. Lưu vào Database (Notification Inbox)
     const { data: insertedNotif, error: dbError } = await supabaseAdmin
       .from('notifications')
       .insert({
         user_id: userId,
-        type: type || 'info',
+        type: safeType,
         title,
         message,
         link: link || null,
-        metadata: metadata || null,
+        metadata: metadata ? (typeof metadata === 'object' ? metadata : { info: metadata }) : null,
         read: false,
         created_at: new Date().toISOString(),
       })
@@ -197,9 +200,12 @@ async function sendPushToAll({ type, title, message, link, metadata, category = 
     const userIds = profiles.map(p => p.id);
 
     // 2. Lưu vào DB theo lô (Inbox)
+    const validTypes = ['info', 'success', 'warning', 'error', 'announcement'];
+    const safeType = validTypes.includes(type) ? type : 'announcement';
+
     const notificationsToInsert = userIds.map(uid => ({
       user_id: uid,
-      type: type || 'info',
+      type: safeType,
       title,
       message,
       link: link || null,
@@ -253,11 +259,45 @@ async function sendPushToAll({ type, title, message, link, metadata, category = 
   }
 }
 
+/**
+ * Gửi thông báo đến tất cả Admin và Manager khi có sự kiện từ Cư dân (User)
+ */
+async function sendNotificationToAdmins({ type, title, message, link, metadata, category = CATEGORY.ANNOUNCEMENTS, priority = PRIORITY.IMPORTANT }) {
+  try {
+    const { data: admins } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .in('role', ['admin', 'manager']);
+
+    if (!admins || admins.length === 0) return { success: false, reason: 'no_admins' };
+
+    const validTypes = ['info', 'success', 'warning', 'error', 'announcement'];
+    const safeType = validTypes.includes(type) ? type : 'info';
+
+    for (const admin of admins) {
+      await sendPushToUser(admin.id, {
+        type: safeType,
+        title,
+        message,
+        link,
+        metadata,
+        category,
+        priority,
+      });
+    }
+    return { success: true, adminCount: admins.length };
+  } catch (err) {
+    console.error('sendNotificationToAdmins error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   PRIORITY,
   CATEGORY,
   sendPushToUser,
   sendPushToAll,
+  sendNotificationToAdmins,
   sendMulticastBatch,
   pruneInvalidTokens,
 };

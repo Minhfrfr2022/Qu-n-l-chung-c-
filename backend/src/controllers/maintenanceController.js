@@ -1,4 +1,5 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
+const { sendPushToUser, sendNotificationToAdmins, PRIORITY, CATEGORY } = require('../services/fcmService');
 
 /**
  * Get all maintenance requests (with filtering for regular users)
@@ -11,14 +12,28 @@ exports.getAllRequests = async (req, res) => {
       .select('*')
       .order('created_at', { ascending: false });
 
-    // If user is not admin/manager, filter by their created requests
+    // If user is not admin/manager, filter by their created requests OR their apartment number
     if (user.role !== 'admin' && user.role !== 'manager') {
-      query = query.eq('created_by', user.id);
+      if (user.apartment_number) {
+        query = query.or(`created_by.eq.${user.id},apt_id.eq.${user.apartment_number}`);
+      } else {
+        query = query.eq('created_by', user.id);
+      }
     }
 
     const { data, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === 'PGRST205' || error.message?.includes('schema cache') || error.message?.includes('does not exist')) {
+        console.warn('maintenance_requests table not found in Supabase. Returning empty data gracefully.');
+        return res.json({
+          success: true,
+          data: [],
+          count: 0
+        });
+      }
+      throw error;
+    }
 
     res.json({
       success: true,
@@ -125,7 +140,16 @@ exports.createRequest = async (req, res) => {
 
     console.log('Maintenance request created:', data.id);
 
-    if (error) throw error;
+    // Gửi thông báo đến toàn bộ Admin & Manager khi Cư dân tạo đơn mới
+    sendNotificationToAdmins({
+      type: 'info',
+      title: 'Yêu cầu sửa chữa mới',
+      message: `Căn hộ ${apt_id} vừa gửi yêu cầu: ${issue_description}`,
+      link: '/admin/maintenance',
+      metadata: { requestId: data.id, apt_id, priority: data.priority },
+      category: CATEGORY.EMERGENCY,
+      priority: data.priority === 'high' || data.priority === 'emergency' ? PRIORITY.URGENT : PRIORITY.IMPORTANT,
+    }).catch(err => console.error('Failed to notify admins of new maintenance request:', err));
 
     res.status(201).json({
       success: true,
@@ -206,6 +230,37 @@ exports.updateRequest = async (req, res) => {
 
     if (error) throw error;
 
+    // Gửi thông báo đến Cư dân căn hộ khi Admin chuyển trạng thái
+    if (isAdmin && updates.status) {
+      const statusText = data.status === 'in_progress' ? 'Đang tiến hành sửa chữa' : data.status === 'confirmed' ? 'Đã xác nhận' : data.status;
+      const notifData = {
+        type: 'info',
+        title: 'Cập nhật tiến độ sửa chữa',
+        message: `Yêu cầu sửa chữa căn hộ ${data.apt_id} đã chuyển sang: "${statusText}".`,
+        link: '/maintenance',
+        metadata: { requestId: data.id, status: data.status },
+        category: CATEGORY.ANNOUNCEMENTS,
+        priority: PRIORITY.IMPORTANT,
+      };
+
+      try {
+        const targetUserIds = new Set();
+        if (data.created_by) targetUserIds.add(data.created_by);
+        if (data.apt_id) {
+          const { data: profiles } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .eq('apartment_number', data.apt_id);
+          if (profiles) profiles.forEach(p => targetUserIds.add(p.id));
+        }
+        for (const uid of targetUserIds) {
+          sendPushToUser(uid, notifData).catch(console.error);
+        }
+      } catch (err) {
+        console.error('Error notifying apartment residents on status update:', err);
+      }
+    }
+
     res.json({
       success: true,
       data,
@@ -253,6 +308,32 @@ exports.confirmRequest = async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // Gửi thông báo đến toàn bộ Cư dân căn hộ khi Admin xác nhận
+    try {
+      const targetUserIds = new Set();
+      if (data.created_by) targetUserIds.add(data.created_by);
+      if (data.apt_id) {
+        const { data: profiles } = await supabaseAdmin
+          .from('profiles')
+          .select('id')
+          .eq('apartment_number', data.apt_id);
+        if (profiles) profiles.forEach(p => targetUserIds.add(p.id));
+      }
+      for (const uid of targetUserIds) {
+        sendPushToUser(uid, {
+          type: 'info',
+          title: 'Yêu cầu sửa chữa đã được xác nhận',
+          message: `Yêu cầu sửa chữa căn hộ ${data.apt_id} đã được tiếp nhận.${data.assigned_to ? ` Thợ phụ trách: ${data.assigned_to}.` : ''}${data.estimated_cost ? ` Dự kiến: ${Number(data.estimated_cost).toLocaleString('vi-VN')} đ.` : ''}`,
+          link: '/maintenance',
+          metadata: { requestId: data.id, status: 'confirmed' },
+          category: CATEGORY.ANNOUNCEMENTS,
+          priority: PRIORITY.IMPORTANT,
+        }).catch(console.error);
+      }
+    } catch (notifErr) {
+      console.error('Failed to notify resident on confirm:', notifErr);
+    }
 
     res.json({
       success: true,
@@ -322,7 +403,6 @@ exports.completeRequest = async (req, res) => {
     let revenueUpdated = false;
     if (finalCost > 0 && data.period) {
       try {
-        // Create a maintenance revenue payment record
         const paymentData = {
           apt_id: data.apt_id,
           period: data.period,
@@ -344,8 +424,33 @@ exports.completeRequest = async (req, res) => {
         }
       } catch (revenueError) {
         console.error('Error updating revenue:', revenueError);
-        // Don't fail the whole request if revenue update fails
       }
+    }
+
+    // Gửi thông báo đến toàn bộ Cư dân căn hộ khi hoàn tất sửa chữa
+    try {
+      const targetUserIds = new Set();
+      if (data.created_by) targetUserIds.add(data.created_by);
+      if (data.apt_id) {
+        const { data: profiles } = await supabaseAdmin
+          .from('profiles')
+          .select('id')
+          .eq('apartment_number', data.apt_id);
+        if (profiles) profiles.forEach(p => targetUserIds.add(p.id));
+      }
+      for (const uid of targetUserIds) {
+        sendPushToUser(uid, {
+          type: 'success',
+          title: 'Hoàn thành sửa chữa căn hộ',
+          message: `Yêu cầu sửa chữa căn hộ ${data.apt_id} đã hoàn tất nghiệm thu. Tổng chi phí: ${Number(finalCost).toLocaleString('vi-VN')} đ.`,
+          link: '/maintenance',
+          metadata: { requestId: data.id, actual_cost: finalCost, status: 'completed' },
+          category: CATEGORY.ANNOUNCEMENTS,
+          priority: PRIORITY.IMPORTANT,
+        }).catch(console.error);
+      }
+    } catch (notifErr) {
+      console.error('Failed to notify resident on complete:', notifErr);
     }
 
     res.json({

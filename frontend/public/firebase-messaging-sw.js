@@ -1,4 +1,4 @@
-﻿/* eslint-disable no-undef */
+/* eslint-disable no-undef */
 // Scripts for firebase messaging service worker
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
@@ -6,11 +6,11 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-com
 // Default config - matches frontend/lib/firebase.ts
 firebase.initializeApp({
   apiKey: "AIzaSyDummyKeyForDevelopment12345678",
-  authDomain: "bluemoon-building.firebaseapp.com",
-  projectId: "bluemoon-building",
-  storageBucket: "bluemoon-building.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdef123456",
+  authDomain: "quan-ly-chung-cu-e16f3.firebaseapp.com",
+  projectId: "quan-ly-chung-cu-e16f3",
+  storageBucket: "quan-ly-chung-cu-e16f3.appspot.com",
+  messagingSenderId: "1078364460138",
+  appId: "1:1078364460138:web:abcdef123456",
 });
 
 let messaging = null;
