@@ -1,23 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import { 
   LayoutDashboard, 
-  Package, 
-  Heart, 
-  Inbox, 
-  List, 
-  Archive,
-  ChevronRight,
-  Shield,
-  UserCheck,
-  Key,
-  Activity,
-  Building2,
-  BarChart3,
-  TrendingUp,
-  Users,
-  Wrench,
-  MessageSquare
+  ChevronRight, 
+  Shield, 
+  UserCheck, 
+  Key, 
+  Activity, 
+  Building2, 
+  BarChart3, 
+  TrendingUp, 
+  Users, 
+  Wrench, 
+  MessageSquare,
+  Pin,
+  PinOff
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
@@ -27,6 +25,10 @@ import { usePathname } from "next/navigation";
 export default function Sidebar() {
   const { hasPermission } = useAuth();
   const pathname = usePathname();
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+
+  const isExpanded = isPinned || isHovered;
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", active: pathname === "/", path: "/" },
@@ -36,287 +38,167 @@ export default function Sidebar() {
     { icon: TrendingUp, label: "Phân tích tài chính", active: pathname === "/financial-stats", path: "/financial-stats" },
   ];
 
-
-
   return (
-    <aside className="fixed left-4 top-4 bottom-4 w-64 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 rounded-2xl overflow-y-auto shadow-2xl z-20 border border-slate-700/50 lg:block">
-      <div className="p-6">
+    <aside 
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className={`fixed left-3 top-3 bottom-3 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 rounded-2xl overflow-y-auto shadow-2xl z-50 border border-slate-700/60 transition-all duration-300 ease-in-out ${
+        isExpanded ? "w-64 px-4" : "w-16 px-2"
+      }`}
+    >
+      <div className="py-4 flex flex-col h-full">
         {/* Logo Section */}
-        <div className="mb-10 pb-6 border-b border-slate-700">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+        <div className="mb-6 pb-4 border-b border-slate-700/80 flex items-center justify-between">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="w-10 h-10 min-w-[40px] bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
               <span className="text-white font-bold text-lg">B</span>
             </div>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1">
-                <span className="text-blue-400 font-bold text-xl">Blue</span>
-                <span className="text-white font-bold text-xl">Moon</span>
+            {isExpanded && (
+              <div className="flex flex-col whitespace-nowrap transition-opacity duration-300 opacity-100">
+                <div className="flex items-center gap-1">
+                  <span className="text-blue-400 font-bold text-lg">Blue</span>
+                  <span className="text-white font-bold text-lg">Moon</span>
+                </div>
+                <span className="text-slate-400 text-[10px]">Quản lý chung cư</span>
               </div>
-              <span className="text-slate-400 text-xs">Quản lý chung cư</span>
-            </div>
+            )}
           </div>
+          {isExpanded && (
+            <button
+              onClick={() => setIsPinned(!isPinned)}
+              title={isPinned ? "Bỏ ghim (tự động thu gọn khi rời chuột)" : "Ghim cố định thanh menu"}
+              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-700/50 transition-colors"
+            >
+              {isPinned ? <Pin className="w-4 h-4 text-blue-400" /> : <PinOff className="w-4 h-4" />}
+            </button>
+          )}
         </div>
 
-        <nav className="space-y-2">
+        <nav className="space-y-2 flex-1">
           {/* Main Menu Items */}
-          <div className="mb-6">
+          <div className="mb-6 space-y-1">
             {menuItems.map((item, index) => {
               const isActive = pathname === item.path;
               return (
                 <Link
                   key={index}
                   href={item.path}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
+                  title={!isExpanded ? item.label : undefined}
+                  className={`w-full flex items-center ${isExpanded ? "gap-3 px-3.5" : "justify-center px-0"} py-2.5 rounded-xl transition-all duration-200 group relative ${
                     isActive
-                      ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/50"
+                      ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/40"
                       : "text-slate-300 hover:bg-slate-800 hover:text-white"
                   }`}
                 >
-                  {isActive && (
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-400 rounded-r-full"></div>
+                  {isActive && isExpanded && (
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-400 rounded-r-full"></div>
                   )}
-                  <item.icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'} transition-colors`} />
-                  <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
-                  {isActive && (
-                    <ChevronRight className="w-4 h-4 opacity-70" />
+                  <item.icon className={`w-5 h-5 min-w-[20px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'} transition-colors`} />
+                  {isExpanded && (
+                    <>
+                      <span className="text-sm font-medium flex-1 text-left whitespace-nowrap overflow-hidden text-ellipsis">{item.label}</span>
+                      {isActive && <ChevronRight className="w-4 h-4 opacity-70" />}
+                    </>
                   )}
                 </Link>
               );
             })}
           </div>
 
-          {/* Admin Section - Only visible to admins */}
+          {/* Admin Section */}
           {hasPermission([UserRole.ADMIN, UserRole.MANAGER]) && (
-            <div className="mb-6">
-              <div className="flex items-center gap-2 px-4 pb-3">
+            <div className="mb-6 space-y-1">
+              <div className="flex items-center gap-2 px-2 pb-2">
                 <div className="h-px flex-1 bg-slate-700"></div>
-                <p className="text-xs font-semibold text-red-500 uppercase tracking-wider flex items-center gap-1">
-                  <Shield className="w-3 h-3" />
-                  Admin
-                </p>
+                {isExpanded && (
+                  <p className="text-xs font-semibold text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                    <Shield className="w-3 h-3" />
+                    Admin
+                  </p>
+                )}
                 <div className="h-px flex-1 bg-slate-700"></div>
               </div>
-              <Link
-                href="/admin"
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                  pathname === '/admin'
-                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/50"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {pathname === '/admin' && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-red-400 rounded-r-full"></div>
-                )}
-                <Shield className={`w-5 h-5 ${pathname === '/admin' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
-                <span className="text-sm font-medium flex-1 text-left">Quản trị hệ thống</span>
-                {pathname === '/admin' && (
-                  <ChevronRight className="w-4 h-4 opacity-70" />
-                )}
-              </Link>
 
-              {/* Visitor Management */}
-              <Link
-                href="/admin/visitors"
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                  pathname === '/admin/visitors'
-                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/50"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {pathname === '/admin/visitors' && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-red-400 rounded-r-full"></div>
-                )}
-                <UserCheck className={`w-5 h-5 ${pathname === '/admin/visitors' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
-                <span className="text-sm font-medium flex-1 text-left">Quản lý khách</span>
-                {pathname === '/admin/visitors' && (
-                  <ChevronRight className="w-4 h-4 opacity-70" />
-                )}
-              </Link>
-
-              {/* Maintenance Management */}
-              <Link
-                href="/admin/maintenance"
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                  pathname === '/admin/maintenance'
-                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/50"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {pathname === '/admin/maintenance' && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-red-400 rounded-r-full"></div>
-                )}
-                <Wrench className={`w-5 h-5 ${pathname === '/admin/maintenance' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
-                <span className="text-sm font-medium flex-1 text-left">Quản lý bảo trì</span>
-                {pathname === '/admin/maintenance' && (
-                  <ChevronRight className="w-4 h-4 opacity-70" />
-                )}
-              </Link>
-
-              {/* Resident Management */}
-              <Link
-                href="/admin/residents"
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                  pathname === '/admin/residents'
-                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/50"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {pathname === '/admin/residents' && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-red-400 rounded-r-full"></div>
-                )}
-                <UserCheck className={`w-5 h-5 ${pathname === '/admin/residents' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
-                <span className="text-sm font-medium flex-1 text-left">Quản lý cư dân</span>
-                {pathname === '/admin/residents' && (
-                  <ChevronRight className="w-4 h-4 opacity-70" />
-                )}
-              </Link>
-
-              {/* Access Control */}
-              <Link
-                href="/admin/access-control"
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                  pathname === '/admin/access-control'
-                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/50"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {pathname === '/admin/access-control' && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-red-400 rounded-r-full"></div>
-                )}
-                <Key className={`w-5 h-5 ${pathname === '/admin/access-control' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
-                <span className="text-sm font-medium flex-1 text-left">Thẻ cư dân</span>
-                {pathname === '/admin/access-control' && (
-                  <ChevronRight className="w-4 h-4 opacity-70" />
-                )}
-              </Link>
-
-              {/* Employee Management - Admin only */}
-              {hasPermission([UserRole.ADMIN]) && (
-                <Link
-                  href="/admin/employees"
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                    pathname === '/admin/employees'
-                      ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/50"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  }`}
-                >
-                  {pathname === '/admin/employees' && (
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-red-400 rounded-r-full"></div>
-                  )}
-                  <UserCheck className={`w-5 h-5 ${pathname === '/admin/employees' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
-                  <span className="text-sm font-medium flex-1 text-left">Quản lý nhân viên</span>
-                  {pathname === '/admin/employees' && (
-                    <ChevronRight className="w-4 h-4 opacity-70" />
-                  )}
-                </Link>
-              )}
-
-              {/* Activity Logs */}
-              <Link
-                href="/activity-logs"
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                  pathname === '/activity-logs'
-                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/50"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {pathname === '/activity-logs' && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-red-400 rounded-r-full"></div>
-                )}
-                <Activity className={`w-5 h-5 ${pathname === '/activity-logs' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
-                <span className="text-sm font-medium flex-1 text-left">Nhật ký hoạt động</span>
-                {pathname === '/activity-logs' && (
-                  <ChevronRight className="w-4 h-4 opacity-70" />
-                )}
-              </Link>
-
-              {/* Population Movements Management */}
-              <Link
-                href="/admin/population-movements"
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                  pathname === '/admin/population-movements'
-                    ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-500/50"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {pathname === '/admin/population-movements' && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-red-400 rounded-r-full"></div>
-                )}
-                <Users className={`w-5 h-5 ${pathname === '/admin/population-movements' ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
-                <span className="text-sm font-medium flex-1 text-left">Biến động nhân khẩu</span>
-                {pathname === '/admin/population-movements' && (
-                  <ChevronRight className="w-4 h-4 opacity-70" />
-                )}
-              </Link>
+              {[
+                { path: "/admin", label: "Quản trị hệ thống", icon: Shield },
+                { path: "/admin/visitors", label: "Quản lý khách", icon: UserCheck },
+                { path: "/admin/maintenance", label: "Quản lý bảo trì", icon: Wrench },
+                { path: "/admin/residents", label: "Quản lý cư dân", icon: UserCheck },
+                { path: "/admin/access-control", label: "Thẻ cư dân", icon: Key },
+                ...(hasPermission([UserRole.ADMIN]) ? [{ path: "/admin/employees", label: "Quản lý nhân viên", icon: UserCheck }] : []),
+                { path: "/activity-logs", label: "Nhật ký hoạt động", icon: Activity },
+                { path: "/admin/population-movements", label: "Biến động nhân khẩu", icon: Users },
+              ].map((item, idx) => {
+                const isActive = pathname === item.path;
+                return (
+                  <Link
+                    key={idx}
+                    href={item.path}
+                    title={!isExpanded ? item.label : undefined}
+                    className={`w-full flex items-center ${isExpanded ? "gap-3 px-3.5" : "justify-center px-0"} py-2.5 rounded-xl transition-all duration-200 group relative ${
+                      isActive
+                        ? "bg-gradient-to-r from-red-600 to-rose-500 text-white shadow-lg shadow-red-500/40"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {isActive && isExpanded && (
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-red-400 rounded-r-full"></div>
+                    )}
+                    <item.icon className={`w-5 h-5 min-w-[20px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-red-400'} transition-colors`} />
+                    {isExpanded && (
+                      <>
+                        <span className="text-sm font-medium flex-1 text-left whitespace-nowrap overflow-hidden text-ellipsis">{item.label}</span>
+                        {isActive && <ChevronRight className="w-4 h-4 opacity-70" />}
+                      </>
+                    )}
+                  </Link>
+                );
+              })}
             </div>
           )}
 
-          {/* User/Resident Features Section */}
-          <div className="mb-6">
-            <div className="flex items-center gap-2 px-4 pb-3">
+          {/* Resident Features Section */}
+          <div className="mb-4 space-y-1">
+            <div className="flex items-center gap-2 px-2 pb-2">
               <div className="h-px flex-1 bg-slate-700"></div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Cá nhân
-              </p>
+              {isExpanded && (
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Cá nhân
+                </p>
+              )}
               <div className="h-px flex-1 bg-slate-700"></div>
             </div>
 
-            {/* My Visitors */}
-            <Link
-              href="/my-visitors"
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                pathname === '/my-visitors'
-                  ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/50"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              {pathname === '/my-visitors' && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-400 rounded-r-full"></div>
-              )}
-              <UserCheck className={`w-5 h-5 ${pathname === '/my-visitors' ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'} transition-colors`} />
-              <span className="text-sm font-medium flex-1 text-left">Khách của tôi</span>
-              {pathname === '/my-visitors' && (
-                <ChevronRight className="w-4 h-4 opacity-70" />
-              )}
-            </Link>
-
-            {/* My Cards */}
-            <Link
-              href="/my-cards"
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                pathname === '/my-cards'
-                  ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/50"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              {pathname === '/my-cards' && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-400 rounded-r-full"></div>
-              )}
-              <Key className={`w-5 h-5 ${pathname === '/my-cards' ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'} transition-colors`} />
-              <span className="text-sm font-medium flex-1 text-left">Thẻ của tôi</span>
-              {pathname === '/my-cards' && (
-                <ChevronRight className="w-4 h-4 opacity-70" />
-              )}
-            </Link>
-
-            {/* Population Movements */}
-            <Link
-              href="/population-movements"
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
-                pathname === '/population-movements'
-                  ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/50"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              {pathname === '/population-movements' && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-400 rounded-r-full"></div>
-              )}
-              <Users className={`w-5 h-5 ${pathname === '/population-movements' ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'} transition-colors`} />
-              <span className="text-sm font-medium flex-1 text-left">Biến động nhân khẩu</span>
-              {pathname === '/population-movements' && (
-                <ChevronRight className="w-4 h-4 opacity-70" />
-              )}
-            </Link>
+            {[
+              { path: "/my-visitors", label: "Khách của tôi", icon: UserCheck },
+              { path: "/my-cards", label: "Thẻ của tôi", icon: Key },
+              { path: "/population-movements", label: "Biến động nhân khẩu", icon: Users },
+            ].map((item, idx) => {
+              const isActive = pathname === item.path;
+              return (
+                <Link
+                  key={idx}
+                  href={item.path}
+                  title={!isExpanded ? item.label : undefined}
+                  className={`w-full flex items-center ${isExpanded ? "gap-3 px-3.5" : "justify-center px-0"} py-2.5 rounded-xl transition-all duration-200 group relative ${
+                    isActive
+                      ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/40"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  {isActive && isExpanded && (
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-400 rounded-r-full"></div>
+                  )}
+                  <item.icon className={`w-5 h-5 min-w-[20px] ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'} transition-colors`} />
+                  {isExpanded && (
+                    <>
+                      <span className="text-sm font-medium flex-1 text-left whitespace-nowrap overflow-hidden text-ellipsis">{item.label}</span>
+                      {isActive && <ChevronRight className="w-4 h-4 opacity-70" />}
+                    </>
+                  )}
+                </Link>
+              );
+            })}
           </div>
         </nav>
       </div>
