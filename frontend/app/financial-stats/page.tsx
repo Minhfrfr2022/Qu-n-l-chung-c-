@@ -10,6 +10,7 @@ import { BarChart3 } from "lucide-react";
 import RevenueManagement from "./components/RevenueManagement";
 import DebtControl from "./components/DebtControl";
 import SettlementReport from "./components/SettlementReport";
+import ExpenseManagement from "./components/ExpenseManagement";
 
 export default function FinancialStatsPage() {
   const [activeTab, setActiveTab] = useState("revenue");
@@ -33,7 +34,7 @@ export default function FinancialStatsPage() {
                       Thống kê tài chính
                     </h1>
                     <p className="text-slate-400 mt-1">
-                      Quản lý doanh thu, kiểm soát nợ và báo cáo quyết toán
+                      Quản lý doanh thu (Hóa đơn), chi phí (Bảo trì), công nợ và báo cáo quyết toán
                     </p>
                   </div>
                 </div>
@@ -41,12 +42,15 @@ export default function FinancialStatsPage() {
 
               {/* Tabs */}
               <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className="bg-slate-800 border border-slate-700 p-1 grid w-full grid-cols-3 lg:w-[600px]">
+                <TabsList className="bg-slate-800 border border-slate-700 p-1 grid w-full grid-cols-4 lg:w-[800px]">
                   <TabsTrigger value="revenue" className="text-sm data-[state=active]:bg-slate-700 data-[state=active]:text-slate-100 text-slate-400">
-                    📈 Quản lý doanh thu
+                    📈 Doanh thu (Thu)
+                  </TabsTrigger>
+                  <TabsTrigger value="expense" className="text-sm data-[state=active]:bg-slate-700 data-[state=active]:text-slate-100 text-slate-400">
+                    🛠️ Chi phí (Chi)
                   </TabsTrigger>
                   <TabsTrigger value="debt" className="text-sm data-[state=active]:bg-slate-700 data-[state=active]:text-slate-100 text-slate-400">
-                    ⚠️ Kiểm soát nợ đọng
+                    ⚠️ Kiểm soát nợ
                   </TabsTrigger>
                   <TabsTrigger value="settlement" className="text-sm data-[state=active]:bg-slate-700 data-[state=active]:text-slate-100 text-slate-400">
                     📊 Báo cáo quyết toán
@@ -56,6 +60,11 @@ export default function FinancialStatsPage() {
                 {/* Module 3.1: Quản lý doanh thu */}
                 <TabsContent value="revenue">
                   <RevenueManagement />
+                </TabsContent>
+
+                {/* Module 3.4: Quản lý chi phí bảo trì */}
+                <TabsContent value="expense">
+                  <ExpenseManagement />
                 </TabsContent>
 
                 {/* Module 3.2: Kiểm soát nợ đọng */}

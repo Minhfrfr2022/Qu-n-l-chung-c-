@@ -192,56 +192,58 @@ export default function FinancialPage() {
                   {/* Summary Cards */}
                   {buildingSummary && (
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                      <Card className="border-0 bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow">
+                      <Card className="border-0 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg hover:shadow-xl transition-shadow">
                         <CardHeader className="pb-3">
                           <CardTitle className="flex items-center gap-2 text-lg font-medium">
                             <DollarSign className="h-5 w-5" />
-                            Tổng thu nhập
+                            Tổng thu (Hóa đơn)
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
                           <div className="text-3xl font-bold">{formatCurrency(buildingSummary.total_income)}</div>
-                          <p className="text-sm opacity-90 mt-2">Từ trước đến nay</p>
+                          <p className="text-sm opacity-90 mt-2">Đã thực thu từ cư dân</p>
                         </CardContent>
                       </Card>
-                      
-                      <Card className="border-0 bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg hover:shadow-xl transition-shadow">
+
+                      <Card className="border-0 bg-gradient-to-br from-rose-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow">
                         <CardHeader className="pb-3">
                           <CardTitle className="flex items-center gap-2 text-lg font-medium">
                             <TrendingUp className="h-5 w-5" />
-                            Tổng phải thu
+                            Tổng chi (Bảo trì)
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold">{formatCurrency(buildingSummary.total_expense || 0)}</div>
+                          <p className="text-sm opacity-90 mt-2">Chi phí sửa chữa & bảo dưỡng</p>
+                        </CardContent>
+                      </Card>
+                      
+                      <Card className="border-0 bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg hover:shadow-xl transition-shadow">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="flex items-center gap-2 text-lg font-medium">
+                            <Percent className="h-5 w-5" />
+                            Lợi nhuận ròng / Quỹ dư
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-3xl font-bold">
+                            {formatCurrency(buildingSummary.net_balance !== undefined ? buildingSummary.net_balance : (buildingSummary.total_income - (buildingSummary.total_expense || 0)))}
+                          </div>
+                          <p className="text-sm opacity-90 mt-2">Tổng thu - Tổng chi</p>
+                        </CardContent>
+                      </Card>
+                      
+                      <Card className="border-0 bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg hover:shadow-xl transition-shadow">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="flex items-center gap-2 text-lg font-medium">
+                            <AlertCircle className="h-5 w-5" />
+                            Công nợ cần thu
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
                           <div className="text-3xl font-bold">{formatCurrency(buildingSummary.total_due_current)}</div>
-                          <p className="text-sm opacity-90 mt-2">Kỳ hiện tại</p>
-                        </CardContent>
-                      </Card>
-                      
-                      <Card className="border-0 bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="flex items-center gap-2 text-lg font-medium">
-                            <AlertCircle className="h-5 w-5" />
-                            Tổng nợ
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="text-3xl font-bold">{formatCurrency(buildingSummary.total_pre_debt)}</div>
-                          <p className="text-sm opacity-90 mt-2">Nợ cũ mang sang</p>
-                        </CardContent>
-                      </Card>
-                      
-                      <Card className="border-0 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="flex items-center gap-2 text-lg font-medium">
-                            <Percent className="h-5 w-5" />
-                            Tỷ lệ nợ
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="text-3xl font-bold">{buildingSummary.debt_ratio}</div>
                           <p className="text-sm opacity-90 mt-2">
-                            {buildingSummary.apartments_in_debt} / {buildingSummary.total_apartments} căn hộ
+                            {buildingSummary.apartments_in_debt} căn hộ chưa đóng
                           </p>
                         </CardContent>
                       </Card>
@@ -449,10 +451,11 @@ export default function FinancialPage() {
                                 <Table>
                                   <TableHeader>
                                     <TableRow className="border-b-2 border-slate-700 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-800 hover:to-slate-900">
-                                      <TableHead className="font-bold text-slate-200">Tầng</TableHead>
-                                      <TableHead className="text-right font-bold text-slate-200">Đã thanh toán</TableHead>
-                                      <TableHead className="text-right font-bold text-slate-200">Nợ hiện tại</TableHead>
-                                      <TableHead className="text-right font-bold text-slate-200">Nợ cũ</TableHead>
+                                      <TableHead className="font-bold text-slate-200">Tầng / Khu vực</TableHead>
+                                      <TableHead className="text-right font-bold text-slate-200">Đã thu (Hóa đơn)</TableHead>
+                                      <TableHead className="text-right font-bold text-slate-200">Chi phí bảo trì</TableHead>
+                                      <TableHead className="text-right font-bold text-slate-200">Kết dư (Thu - Chi)</TableHead>
+                                      <TableHead className="text-right font-bold text-slate-200">Nợ cần thu</TableHead>
                                       <TableHead className="text-right font-bold text-slate-200">Tỷ lệ thu</TableHead>
                                     </TableRow>
                                   </TableHeader>
@@ -463,11 +466,14 @@ export default function FinancialPage() {
                                         <TableCell className="text-right font-semibold text-green-400">
                                           {formatCurrency(item.total_paid)}
                                         </TableCell>
+                                        <TableCell className="text-right text-rose-400 font-medium">
+                                          {formatCurrency(item.total_expense || 0)}
+                                        </TableCell>
+                                        <TableCell className={`text-right font-semibold ${(item.net_balance ?? (item.total_paid - (item.total_expense || 0))) >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+                                          {formatCurrency(item.net_balance ?? (item.total_paid - (item.total_expense || 0)))}
+                                        </TableCell>
                                         <TableCell className="text-right text-orange-400">
                                           {formatCurrency(item.total_due_current)}
-                                        </TableCell>
-                                        <TableCell className="text-right text-red-400">
-                                          {formatCurrency(item.current_pre_debt)}
                                         </TableCell>
                                         <TableCell className="text-right">
                                           <Badge className="bg-blue-500/20 text-blue-400 border-blue-500">{item.collection_rate}</Badge>

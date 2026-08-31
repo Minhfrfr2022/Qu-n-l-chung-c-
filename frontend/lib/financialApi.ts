@@ -61,6 +61,8 @@ export interface FinancialByFloor {
   total_paid: number;
   total_due_current: number;
   current_pre_debt: number;
+  total_expense?: number;
+  net_balance?: number;
   collection_rate: string;
 }
 
@@ -71,11 +73,15 @@ export interface ApartmentFinancialSummary {
   total_due_current: number;
   total_paid_all_time: number;
   current_remaining_debt: number;
+  total_maintenance_cost?: number;
+  maintenance_requests?: any[];
   payments: any[];
 }
 
 export interface BuildingFinancialSummary {
   total_income: number;
+  total_expense?: number;
+  net_balance?: number;
   total_due_current: number;
   total_pre_debt: number;
   apartments_in_debt: number;
@@ -86,9 +92,12 @@ export interface BuildingFinancialSummary {
 export interface IncomeByPeriod {
   period: string;
   total_income: number;
+  total_expense?: number;
+  net_profit?: number;
   total_charges?: number;
   total_debt?: number;
   payment_count: number;
+  maintenance_count?: number;
   bill_count?: number;
 }
 
@@ -106,6 +115,9 @@ export interface PeriodComparison {
   comparison: {
     income_change: number;
     income_change_percent: string;
+    expense_change?: number;
+    expense_change_percent?: string;
+    net_profit_change?: number;
     charges_change: number;
     debt_change: number;
   };
@@ -114,17 +126,22 @@ export interface PeriodComparison {
 export interface PeriodSummary {
   period: string;
   total_income: number;
+  total_expense?: number;
+  net_balance?: number;
   total_charges: number;
   total_debt: number;
   collection_rate: string;
   bill_count: number;
   payment_count: number;
+  maintenance_count?: number;
 }
 
 export interface CollectionRate {
   period: string;
   collection_rate: number;
   total_income: number;
+  total_expense?: number;
+  net_profit?: number;
   total_charges: number;
 }
 
@@ -132,6 +149,8 @@ export interface CollectionRate {
 export interface RevenueGrowth {
   period: string;
   total_income: number;
+  total_expense?: number;
+  net_profit?: number;
   growth_rate: number;
   previous_income: number;
 }
@@ -164,6 +183,34 @@ export interface RevenueByFloorOrArea {
     percentage: number;
     average_per_apartment: number;
   }[];
+}
+
+// Module 3.4: Quản lý chi phí bảo trì
+export interface ExpenseCategoryBreakdown {
+  id: string;
+  name: string;
+  total: number;
+  count: number;
+  percentage: number;
+}
+
+export interface ExpensesByCategory {
+  period: string;
+  total_expense: number;
+  total_requests: number;
+  breakdown: ExpenseCategoryBreakdown[];
+  details: any;
+}
+
+export interface MaintenanceExpenseItem {
+  id: string;
+  apt_id: string;
+  resident_name?: string;
+  issue_description: string;
+  category_name?: string;
+  cost: number;
+  status: string;
+  completed_at?: string;
 }
 
 // Module 3.2: Kiểm soát nợ đọng
@@ -217,6 +264,7 @@ export interface SettlementReport {
   generated_at: string;
   summary: PeriodSummary & {
     fee_breakdown: FeeBreakdown;
+    expense_breakdown?: ExpensesByCategory;
   };
   by_floor: FinancialByFloor[];
   apartments: {
@@ -234,12 +282,15 @@ export interface SettlementReport {
     balance: number;
     status: string;
   }[];
+  maintenance_items?: MaintenanceExpenseItem[];
   statistics: {
     total_apartments: number;
     paid_apartments: number;
     partial_paid: number;
     unpaid_apartments: number;
     total_outstanding: number;
+    total_maintenance_count?: number;
+    total_maintenance_cost?: number;
   };
 }
 
@@ -429,5 +480,37 @@ export const financialAPI = {
     return apiRequest<{
       data: SettlementReport;
     }>(`/payments/settlement/${period}`);
+  },
+
+  // ==== MODULE 3.4: QUẢN LÝ CHI PHÍ BẢO TRÌ ====
+
+  /** GET /api/payments/expenses/by-category */
+  getExpensesByCategory: async (period?: string) => {
+    const url = period
+      ? `/payments/expenses/by-category?period=${period}`
+      : '/payments/expenses/by-category';
+    return apiRequest<{
+      data: ExpensesByCategory;
+    }>(url);
+  },
+
+  /** GET /api/payments/expenses/list */
+  getExpensesList: async (params?: {
+    start_period?: string;
+    end_period?: string;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.start_period) qs.append('start_period', params.start_period);
+    if (params?.end_period) qs.append('end_period', params.end_period);
+    if (params?.limit) qs.append('limit', params.limit.toString());
+
+    return apiRequest<{
+      data: {
+        total: number;
+        total_cost: number;
+        data: MaintenanceExpenseItem[];
+      };
+    }>(`/payments/expenses/list${qs.toString() ? `?${qs}` : ''}`);
   },
 };

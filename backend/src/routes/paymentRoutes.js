@@ -21,7 +21,10 @@ const {
   getTotalOutstandingDebt,
   getDebtPaymentHistory,
   // Module 3.3: Báo cáo quyết toán
-  getMonthlySettlementReport
+  getMonthlySettlementReport,
+  // Module 3.4: Quản lý chi phí bảo trì
+  getExpensesByCategory,
+  getExpensesList
 } = require('../controllers/paymentController');
 
 /**
@@ -520,5 +523,9 @@ router.get('/debt/payment-history/:apt_id', getDebtPaymentHistory);
  *         description: Báo cáo quyết toán đầy đủ (tổng hợp thu chi, chi tiết từng căn hộ)
  */
 router.get('/settlement/:period', getMonthlySettlementReport);
+
+// ==== MODULE 3.4: QUẢN LÝ CHI PHÍ BẢO TRÌ ====
+router.get('/expenses/by-category', getExpensesByCategory);
+router.get('/expenses/list', getExpensesList);
 
 module.exports = router;

@@ -208,40 +208,81 @@ export default function SettlementReport() {
                 </p>
               </CardHeader>
               <CardContent className="pt-6">
-                {/* Summary */}
+                {/* Balance Sheet Summary: Thu - Chi - Kết Dư */}
                 <div className="mb-6">
-                  <h2 className="text-xl font-bold mb-4 border-b pb-2">Tổng hợp</h2>
+                  <h2 className="text-xl font-bold mb-4 border-b pb-2">Bảng cân đối Quyết toán (Thu - Chi)</h2>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <div className="text-sm text-gray-600 mb-1">Tổng đã thu</div>
+                      <div className="text-sm text-gray-600 mb-1">🟢 Tổng thu (Hóa đơn)</div>
                       <div className="text-2xl font-bold text-green-600">
                         {formatCurrency(report.summary.total_income)}
                       </div>
+                      <div className="text-xs text-gray-500 mt-1">Đã thực thu từ cư dân</div>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                      <div className="text-sm text-gray-600 mb-1">🔴 Tổng chi (Bảo trì)</div>
+                      <div className="text-2xl font-bold text-red-600">
+                        {formatCurrency(report.summary.total_expense || 0)}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">{report.maintenance_items?.length || 0} hạng mục sửa chữa</div>
                     </div>
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <div className="text-sm text-gray-600 mb-1">Tổng phải thu</div>
+                      <div className="text-sm text-gray-600 mb-1">🔵 Kết dư / Thặng dư quỹ</div>
                       <div className="text-2xl font-bold text-blue-600">
-                        {formatCurrency(report.summary.total_charges)}
+                        {formatCurrency(report.summary.net_balance !== undefined ? report.summary.net_balance : (report.summary.total_income - (report.summary.total_expense || 0)))}
                       </div>
+                      <div className="text-xs text-gray-500 mt-1">Thu nhập trừ Chi phí</div>
                     </div>
                     <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                      <div className="text-sm text-gray-600 mb-1">Tổng nợ cũ</div>
+                      <div className="text-sm text-gray-600 mb-1">🟡 Công nợ chưa thu</div>
                       <div className="text-2xl font-bold text-orange-600">
                         {formatCurrency(report.summary.total_debt)}
                       </div>
-                    </div>
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                      <div className="text-sm text-gray-600 mb-1">Tỷ lệ thu</div>
-                      <div className="text-2xl font-bold text-purple-600">
-                        {report.summary.collection_rate}
-                      </div>
+                      <div className="text-xs text-gray-500 mt-1">Tỷ lệ thu: {report.summary.collection_rate}</div>
                     </div>
                   </div>
                 </div>
 
+                {/* Maintenance Expense Breakdown if any */}
+                {report.maintenance_items && report.maintenance_items.length > 0 && (
+                  <div className="mb-6">
+                    <h2 className="text-xl font-bold mb-4 border-b pb-2 text-rose-600">
+                      Chi tiết các khoản Chi Bảo trì & Sửa chữa ({report.maintenance_items.length} hạng mục)
+                    </h2>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead className="bg-rose-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-rose-800 uppercase">Căn hộ / Vị trí</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-rose-800 uppercase">Mô tả sự cố</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-rose-800 uppercase">Danh mục</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-rose-800 uppercase">Chi phí</th>
+                            <th className="px-3 py-2 text-center text-xs font-medium text-rose-800 uppercase">Trạng thái</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {report.maintenance_items.map((m) => (
+                            <tr key={m.id} className="hover:bg-rose-50/50">
+                              <td className="px-3 py-2 font-medium">{m.apt_id ? `Phòng ${m.apt_id}` : "Khu vực chung"}</td>
+                              <td className="px-3 py-2">{m.issue_description}</td>
+                              <td className="px-3 py-2">{m.category_name || "Sửa chữa"}</td>
+                              <td className="px-3 py-2 text-right font-semibold text-red-600">{formatCurrency(m.cost)}</td>
+                              <td className="px-3 py-2 text-center">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                  {m.status === 'completed' ? 'Đã hoàn thành' : m.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 {/* Fee Breakdown */}
                 <div className="mb-6">
-                  <h2 className="text-xl font-bold mb-4 border-b pb-2">Chi tiết các loại phí</h2>
+                  <h2 className="text-xl font-bold mb-4 border-b pb-2">Chi tiết Doanh thu các loại phí</h2>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="text-center p-3 bg-blue-50 rounded-lg">
                       <div className="text-sm text-gray-600">Tiền điện</div>

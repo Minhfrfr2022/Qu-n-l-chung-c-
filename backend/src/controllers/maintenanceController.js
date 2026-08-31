@@ -381,11 +381,13 @@ exports.completeRequest = async (req, res) => {
       });
     }
 
-    const finalCost = actual_cost || request.estimated_cost || 0;
+    const nowIso = new Date().toISOString();
+    const periodCalculated = request.period || nowIso.slice(0, 7);
 
     const updateData = {
       status: 'completed',
-      completed_at: new Date().toISOString(),
+      completed_at: nowIso,
+      period: periodCalculated,
       actual_cost: finalCost,
       notes: notes || request.notes
     };
@@ -399,33 +401,7 @@ exports.completeRequest = async (req, res) => {
 
     if (error) throw error;
 
-    // Update financial revenue if cost > 0
-    let revenueUpdated = false;
-    if (finalCost > 0 && data.period) {
-      try {
-        const paymentData = {
-          apt_id: data.apt_id,
-          period: data.period,
-          amount: finalCost,
-          payment_date: new Date().toISOString().split('T')[0],
-          payment_method: 'maintenance',
-          notes: `Doanh thu từ bảo trì: ${data.issue_description.substring(0, 100)}`,
-          created_at: new Date().toISOString()
-        };
-
-        const { error: paymentError } = await supabaseAdmin
-          .from('payments')
-          .insert([paymentData]);
-
-        if (paymentError) {
-          console.error('Error adding maintenance revenue:', paymentError);
-        } else {
-          revenueUpdated = true;
-        }
-      } catch (revenueError) {
-        console.error('Error updating revenue:', revenueError);
-      }
-    }
+    // Chi phí sửa chữa được lưu trực tiếp vào maintenance_requests để phục vụ báo cáo Chi phí (Expenses).
 
     // Gửi thông báo đến toàn bộ Cư dân căn hộ khi hoàn tất sửa chữa
     try {

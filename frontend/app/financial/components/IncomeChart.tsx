@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { IncomeByPeriod } from "@/lib/financialApi";
 
 interface IncomeChartProps {
@@ -20,49 +20,64 @@ const formatCurrency = (value: number) => {
 export default function IncomeChart({ data }: IncomeChartProps) {
   const chartData = data.map(item => ({
     period: item.period,
-    "Thu nhập": item.total_income,
-    "Phí phải thu": item.total_charges || 0,
-    "Nợ": item.total_debt || 0,
+    "Thu (Hóa đơn)": item.total_income,
+    "Chi (Bảo trì/Sửa chữa)": item.total_expense || 0,
+    "Nợ chưa thu": item.total_debt || 0,
+    "Lợi nhuận ròng (Thu - Chi)": item.net_profit !== undefined ? item.net_profit : (item.total_income - (item.total_expense || 0)),
   }));
 
   return (
-    <Card className="bg-white border-gray-200 shadow-lg">
+    <Card className="bg-slate-800 border-slate-700 shadow-xl text-slate-100">
       <CardHeader>
-        <CardTitle className="text-gray-900 flex items-center gap-2">
-          <span className="inline-block w-1 h-6 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full"></span>
-          Biểu đồ Thu Chi Theo Thời Gian
+        <CardTitle className="text-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-1.5 h-6 bg-gradient-to-b from-green-400 to-blue-500 rounded-full"></span>
+            Biểu đồ Thu (Hóa đơn) - Chi (Bảo trì) & Lợi nhuận ròng
+          </div>
+          <span className="text-xs text-slate-400 font-normal">Đơn vị: VNĐ</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={350}>
-          <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <ResponsiveContainer width="100%" height={380}>
+          <ComposedChart data={chartData} margin={{ top: 20, right: 20, bottom: 20, left: 10 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.6} />
             <XAxis 
               dataKey="period" 
-              stroke="#6b7280"
+              stroke="#94a3b8"
               style={{ fontSize: '12px' }}
             />
             <YAxis 
-              stroke="#6b7280"
+              stroke="#94a3b8"
               tickFormatter={formatCurrency}
               style={{ fontSize: '12px' }}
             />
             <Tooltip 
-              formatter={(value: number) => formatCurrency(value)}
+              formatter={(value: number) => [
+                new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value),
+                ""
+              ]}
               contentStyle={{
-                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                border: '1px solid #e5e7eb',
+                backgroundColor: '#1e293b',
+                border: '1px solid #475569',
                 borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                color: '#f8fafc',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
               }}
             />
             <Legend 
-              wrapperStyle={{ fontSize: '12px' }}
+              wrapperStyle={{ fontSize: '13px', paddingTop: '10px' }}
             />
-            <Bar dataKey="Thu nhập" fill="#10b981" radius={[8, 8, 0, 0]} />
-            <Bar dataKey="Phí phải thu" fill="#f59e0b" radius={[8, 8, 0, 0]} />
-            <Bar dataKey="Nợ" fill="#ef4444" radius={[8, 8, 0, 0]} />
-          </BarChart>
+            <Bar dataKey="Thu (Hóa đơn)" fill="#10b981" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="Chi (Bảo trì/Sửa chữa)" fill="#ef4444" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="Nợ chưa thu" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+            <Line 
+              type="monotone" 
+              dataKey="Lợi nhuận ròng (Thu - Chi)" 
+              stroke="#38bdf8" 
+              strokeWidth={3} 
+              dot={{ r: 5, fill: '#38bdf8' }} 
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>

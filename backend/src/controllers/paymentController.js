@@ -398,6 +398,46 @@ exports.getMonthlySettlementReport = async (req, res) => {
   }
 };
 
+// ==== MODULE 3.4: QUẢN LÝ CHI PHÍ BẢO TRÌ & SỬA CHỮA ====
+
+// 3.4.1 Phân loại chi phí bảo trì theo danh mục
+exports.getExpensesByCategory = async (req, res) => {
+  try {
+    const { period } = req.query;
+    const data = await paymentService.getMaintenanceExpensesByCategory(period);
+
+    res.status(200).json({
+      success: true,
+      message: period 
+        ? `Phân loại chi phí bảo trì kỳ ${period}`
+        : 'Phân loại tổng hợp chi phí bảo trì',
+      data,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// 3.4.2 Danh sách các khoản chi bảo trì
+exports.getExpensesList = async (req, res) => {
+  try {
+    const { start_period, end_period, limit } = req.query;
+    const data = await paymentService.getMaintenanceExpensesList(
+      start_period, 
+      end_period, 
+      limit ? parseInt(limit) : 50
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Danh sách các khoản chi bảo trì',
+      data,
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
 // Helper function to create notifications (moved from billController)
 const createNotification = async (userId, type, title, message, link = null, metadata = null) => {
   try {

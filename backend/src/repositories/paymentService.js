@@ -1,6 +1,55 @@
 const { supabaseAdmin: supabase } = require('../config/supabase.js');
 
 /**
+ * Phân loại sự cố bảo trì/sửa chữa tự động qua từ khóa
+ */
+function categorizeMaintenance(desc = '', notes = '') {
+  const text = `${desc || ''} ${notes || ''}`.toLowerCase();
+  if (text.includes('điện') || text.includes('đèn') || text.includes('công tắc') || text.includes('ổ cắm') || text.includes('chập') || text.includes('aptomat')) {
+    return { id: 'electric', name: 'Hệ thống Điện' };
+  }
+  if (text.includes('nước') || text.includes('vòi') || text.includes('ống') || text.includes('bồn') || text.includes('rò rỉ') || text.includes('thấm') || text.includes('nghẹt') || text.includes('thoát')) {
+    return { id: 'water', name: 'Cấp thoát nước' };
+  }
+  if (text.includes('cửa') || text.includes('khóa') || text.includes('sơn') || text.includes('tường') || text.includes('gạch') || text.includes('trần') || text.includes('kính') || text.includes('ban công')) {
+    return { id: 'infrastructure', name: 'Hạ tầng & Xây dựng' };
+  }
+  if (text.includes('thang máy') || text.includes('pccc') || text.includes('bơm') || text.includes('máy phát') || text.includes('camera') || text.includes('chuông')) {
+    return { id: 'mep', name: 'Thang máy & Cơ điện' };
+  }
+  return { id: 'other', name: 'Bảo dưỡng & Sửa chữa khác' };
+}
+
+/**
+ * Lấy toàn bộ danh sách yêu cầu bảo trì đã chuẩn hóa period, chi phí và danh mục
+ */
+async function getNormalizedMaintenanceRequests() {
+  const { data: requests, error } = await supabase
+    .from('maintenance_requests')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.warn('Error fetching maintenance requests:', error.message);
+    return [];
+  }
+
+  return (requests || []).map(r => {
+    const period = r.period || (r.completed_at ? r.completed_at.slice(0, 7) : (r.created_at ? r.created_at.slice(0, 7) : null));
+    const cost = Number(r.actual_cost) > 0 ? Number(r.actual_cost) : (Number(r.estimated_cost) || 0);
+    const cat = categorizeMaintenance(r.issue_description, r.notes);
+
+    return {
+      ...r,
+      normalized_period: period,
+      resolved_cost: cost,
+      category_id: cat.id,
+      category_name: cat.name
+    };
+  });
+}
+
+/**
  * Thống kê tổng đã thu của từng căn hộ (phân trang, sắp xếp giảm dần theo tiền thu)
  */
 exports.getIncomeByApartmentPaginated = async (offset = 0, limit = 20) => {
@@ -48,7 +97,7 @@ exports.getIncomeByFloor = async () => {
   if (!payments || payments.length === 0) return [];
 
   const floorMap = payments.reduce((acc, p) => {
-    const floor = p.apartments.floor ?? 'Không xác định';
+    const floor = p.apartments?.floor ?? 'Không xác định';
     acc[floor] = (acc[floor] || 0) + Number(p.amount || 0);
     return acc;
   }, {});
@@ -63,24 +112,21 @@ exports.getIncomeByFloor = async () => {
 };
 
 /**
- * Thống kê tài chính chi tiết theo tầng (dựa trên hóa đơn hiện tại trong bảng bills)
+ * Thống kê tài chính chi tiết theo tầng: Thu (Hóa đơn) vs Chi (Bảo trì)
  */
 exports.getFinancialByFloor = async () => {
-  // Get all payments
   const { data: payments, error: payError } = await supabase
     .from('payments')
     .select('apt_id, amount');
 
   if (payError) throw payError;
 
-  // Get all apartments for floor mapping
   const { data: apartments, error: aptError } = await supabase
     .from('apartments')
     .select('apt_id, floor');
   
   if (aptError) throw aptError;
 
-  // Create apt_id -> floor mapping
   const floorMap = (apartments || []).reduce((acc, apt) => {
     acc[apt.apt_id] = apt.floor ?? 'Không xác định';
     return acc;
@@ -110,15 +156,25 @@ exports.getFinancialByFloor = async () => {
     debtMap[floor] = (debtMap[floor] || 0) + Number(b.pre_debt || 0);
   });
 
-  const floors = new Set([...Object.keys(paidMap), ...Object.keys(billedMap), ...Object.keys(debtMap)]);
+  // Lấy chi phí bảo trì theo tầng
+  const maintenanceReqs = await getNormalizedMaintenanceRequests();
+  const expenseMap = {};
+  maintenanceReqs.forEach(r => {
+    const floor = floorMap[r.apt_id] ?? 'Khu vực chung';
+    expenseMap[floor] = (expenseMap[floor] || 0) + Number(r.resolved_cost || 0);
+  });
+
+  const floors = new Set([...Object.keys(paidMap), ...Object.keys(billedMap), ...Object.keys(debtMap), ...Object.keys(expenseMap)]);
 
   return Array.from(floors)
     .map(key => ({
       floor: isNaN(key) ? null : parseInt(key),
-      display: `Tầng ${key}`,
+      display: key === 'Khu vực chung' ? 'Khu vực chung' : `Tầng ${key}`,
       total_paid: paidMap[key] || 0,
       total_due_current: billedMap[key] || 0,     
-      current_pre_debt: debtMap[key] || 0,        
+      current_pre_debt: debtMap[key] || 0,
+      total_expense: expenseMap[key] || 0,
+      net_balance: (paidMap[key] || 0) - (expenseMap[key] || 0),
       collection_rate: billedMap[key] > 0
         ? ((paidMap[key] / billedMap[key]) * 100).toFixed(2) + '%'
         : '0%'
@@ -127,10 +183,9 @@ exports.getFinancialByFloor = async () => {
 };
 
 /**
- * Danh sách các căn hộ đang nợ (pre_debt > 0 trong bảng bills hiện tại)
+ * Danh sách các căn hộ đang nợ
  */
 exports.getApartmentsInDebt = async (offset = 0, limit = 20) => {
-  // Get bills with debt
   const { data: bills, error: billsError } = await supabase
     .from('bills')
     .select('apt_id, pre_debt')
@@ -138,14 +193,12 @@ exports.getApartmentsInDebt = async (offset = 0, limit = 20) => {
 
   if (billsError) throw billsError;
 
-  // Get apartments info separately
   const { data: apartments, error: aptError } = await supabase
     .from('apartments')
     .select('apt_id, owner_name, floor');
 
   if (aptError) throw aptError;
 
-  // Create mapping
   const aptMap = (apartments || []).reduce((acc, apt) => {
     acc[apt.apt_id] = apt;
     return acc;
@@ -167,7 +220,7 @@ exports.getApartmentsInDebt = async (offset = 0, limit = 20) => {
 };
 
 /**
- * Chi tiết tài chính một căn hộ cụ thể (dựa trên hóa đơn hiện tại + lịch sử thanh toán)
+ * Chi tiết tài chính một căn hộ cụ thể
  */
 exports.getApartmentFinancialSummary = async (apt_id) => {
   const { data: bill, error: billError } = await supabase
@@ -187,15 +240,19 @@ exports.getApartmentFinancialSummary = async (apt_id) => {
 
   const { data: payments, error: payError } = await supabase
     .from('payments')
-    .select('period, amount, paid_at, method, note')
+    .select('period, amount, created_at, payment_method, note')
     .eq('apt_id', apt_id)
-    .order('paid_at', { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (payError) throw payError;
 
   const totalPaidAllTime = (payments || []).reduce((sum, p) => sum + Number(p.amount || 0), 0);
-
   const currentRemainingDebt = totalDueCurrent - totalPaidAllTime > 0 ? totalDueCurrent - totalPaidAllTime : 0;
+
+  // Lấy lịch sử chi phí sửa chữa căn hộ này
+  const maintenanceReqs = await getNormalizedMaintenanceRequests();
+  const aptMaintenance = maintenanceReqs.filter(r => r.apt_id === apt_id);
+  const totalMaintenanceCost = aptMaintenance.reduce((sum, r) => sum + r.resolved_cost, 0);
 
   return {
     apt_id,
@@ -204,12 +261,14 @@ exports.getApartmentFinancialSummary = async (apt_id) => {
     total_due_current: totalDueCurrent,        
     total_paid_all_time: totalPaidAllTime,     
     current_remaining_debt: currentRemainingDebt,
+    total_maintenance_cost: totalMaintenanceCost,
+    maintenance_requests: aptMaintenance,
     payments: payments || []
   };
 };
 
 /**
- * Thống kê tài chính tổng quan toàn tòa nhà
+ * Thống kê tài chính tổng quan toàn tòa nhà: Thu (Hóa đơn) - Chi (Bảo trì) = Kết dư
  */
 exports.getBuildingFinancialSummary = async () => {
   const { data: allPayments, error: payError } = await supabase
@@ -222,7 +281,7 @@ exports.getBuildingFinancialSummary = async () => {
 
   const { data: bills, error: billError } = await supabase
     .from('bills')
-    .select('electric, water, service, vehicles, pre_debt');
+    .select('electric, water, service, vehicles, pre_debt, total_due, paid, status');
 
   if (billError) throw billError;
 
@@ -231,21 +290,34 @@ exports.getBuildingFinancialSummary = async () => {
   let apartmentsInDebt = 0;
 
   (bills || []).forEach(b => {
-    const newCharges = Number(b.electric || 0) + Number(b.water || 0) + Number(b.service || 0) + Number(b.vehicles || 0);
-    const due = newCharges + Number(b.pre_debt || 0);
-    totalDueCurrent += due;
+    const due = Number(b.total_due) || (
+      Number(b.electric || 0) + Number(b.water || 0) + Number(b.service || 0) + Number(b.vehicles || 0) + Number(b.pre_debt || 0)
+    );
+    if (!b.paid && b.status !== 'paid') {
+      totalDueCurrent += due;
+    }
     totalPreDebt += Number(b.pre_debt || 0);
-    if (Number(b.pre_debt || 0) > 0) apartmentsInDebt++;
+    if (Number(b.pre_debt || 0) > 0 || (!b.paid && b.status !== 'paid')) {
+      apartmentsInDebt++;
+    }
   });
+
+  // Tính tổng chi phí bảo trì toàn tòa nhà
+  const maintenanceReqs = await getNormalizedMaintenanceRequests();
+  const totalExpense = maintenanceReqs.reduce((sum, r) => sum + r.resolved_cost, 0);
 
   const { count: totalApartments } = await supabase
     .from('apartments')
     .select('*', { count: 'exact', head: true });
 
+  const netBalance = totalIncome - totalExpense;
+
   return {
-    total_income: totalIncome,
-    total_due_current: totalDueCurrent,         
-    total_pre_debt: totalPreDebt,               
+    total_income: totalIncome,                 // Tổng thu (Hóa đơn đã thanh toán)
+    total_expense: totalExpense,               // Tổng chi (Chi phí bảo trì & sửa chữa)
+    net_balance: netBalance,                   // Kết dư quỹ / Lợi nhuận ròng (Thu - Chi)
+    total_due_current: totalDueCurrent,        // Tổng công nợ hóa đơn chưa thu
+    total_pre_debt: totalPreDebt,              // Nợ cũ kỳ trước
     apartments_in_debt: apartmentsInDebt,
     total_apartments: totalApartments || 0,
     debt_ratio: totalApartments > 0
@@ -255,11 +327,10 @@ exports.getBuildingFinancialSummary = async () => {
 };
 
 /**
- * Thống kê thu chi theo thời gian (tháng)
- * Trả về dữ liệu cho chart
+ * Thống kê Thu - Chi theo kỳ (tháng): Thu (Hóa đơn) vs Chi (Bảo trì)
  */
 exports.getIncomeByPeriod = async (startPeriod, endPeriod) => {
-  // Fetch all payments without period filter  
+  // Lấy các khoản thanh toán hóa đơn
   const { data: payments, error } = await supabase
     .from('payments')
     .select('period, amount')
@@ -267,80 +338,106 @@ exports.getIncomeByPeriod = async (startPeriod, endPeriod) => {
 
   if (error) throw error;
 
-  // Filter by period range manually
-  const filteredPayments = (payments || []).filter(p => {
-    if (!p.period) return false;
-    const period = p.period.toString();
-    return period >= startPeriod && period <= endPeriod;
-  });
-
-  // Group by period
   const periodMap = {};
-  filteredPayments.forEach(p => {
-    // Convert YYYY-MM-DD to YYYY-MM for display
-    const periodDate = p.period.toString();
-    const period = periodDate.substring(0, 7); // Get YYYY-MM
-    
+
+  (payments || []).forEach(p => {
+    if (!p.period) return;
+    const period = p.period.toString().substring(0, 7);
+    if (period < startPeriod || period > endPeriod) return;
+
     if (!periodMap[period]) {
       periodMap[period] = {
         period,
         total_income: 0,
-        payment_count: 0
+        total_expense: 0,
+        net_profit: 0,
+        total_charges: 0,
+        total_debt: 0,
+        payment_count: 0,
+        maintenance_count: 0,
+        bill_count: 0
       };
     }
     periodMap[period].total_income += Number(p.amount || 0);
     periodMap[period].payment_count += 1;
   });
 
-  // Get bills for the same periods
+  // Lấy hóa đơn
   const { data: bills, error: billError } = await supabase
     .from('bills')
-    .select('period, electric, water, service, vehicles, pre_debt');
+    .select('period, electric, water, service, vehicles, pre_debt, total_due, paid, status');
 
   if (billError) throw billError;
 
-  // Filter bills by period range
-  const filteredBills = (bills || []).filter(b => {
-    if (!b.period) return false;
-    const period = b.period.toString();
-    return period >= startPeriod && period <= endPeriod;
-  });
+  (bills || []).forEach(b => {
+    if (!b.period) return;
+    const period = b.period.toString().substring(0, 7);
+    if (period < startPeriod || period > endPeriod) return;
 
-  // Group bills by period
-  filteredBills.forEach(b => {
-    const period = b.period;
     if (!periodMap[period]) {
       periodMap[period] = {
         period,
         total_income: 0,
-        payment_count: 0
+        total_expense: 0,
+        net_profit: 0,
+        total_charges: 0,
+        total_debt: 0,
+        payment_count: 0,
+        maintenance_count: 0,
+        bill_count: 0
       };
     }
-    
-    const charges = Number(b.electric || 0) + Number(b.water || 0) + 
-                   Number(b.service || 0) + Number(b.vehicles || 0);
-    
-    if (!periodMap[period].total_charges) {
-      periodMap[period].total_charges = 0;
-      periodMap[period].total_debt = 0;
-      periodMap[period].bill_count = 0;
-    }
-    
+
+    const charges = Number(b.electric || 0) + Number(b.water || 0) + Number(b.service || 0) + Number(b.vehicles || 0);
+    const due = Number(b.total_due) || (charges + Number(b.pre_debt || 0));
+
     periodMap[period].total_charges += charges;
-    periodMap[period].total_debt += Number(b.pre_debt || 0);
+    if (!b.paid && b.status !== 'paid') {
+      periodMap[period].total_debt += due;
+    }
     periodMap[period].bill_count += 1;
+  });
+
+  // Lấy chi phí bảo trì & sửa chữa (Chi)
+  const maintenanceReqs = await getNormalizedMaintenanceRequests();
+  maintenanceReqs.forEach(r => {
+    if (!r.normalized_period) return;
+    const period = r.normalized_period;
+    if (period < startPeriod || period > endPeriod) return;
+
+    if (!periodMap[period]) {
+      periodMap[period] = {
+        period,
+        total_income: 0,
+        total_expense: 0,
+        net_profit: 0,
+        total_charges: 0,
+        total_debt: 0,
+        payment_count: 0,
+        maintenance_count: 0,
+        bill_count: 0
+      };
+    }
+
+    periodMap[period].total_expense += Number(r.resolved_cost || 0);
+    periodMap[period].maintenance_count += 1;
+  });
+
+  // Tính lợi nhuận ròng / kết dư từng tháng
+  Object.values(periodMap).forEach(p => {
+    p.net_profit = p.total_income - p.total_expense;
   });
 
   return Object.values(periodMap).sort((a, b) => a.period.localeCompare(b.period));
 };
 
 /**
- * Thống kê chi tiết các loại phí
+ * Thống kê chi tiết các loại phí trong hóa đơn
  */
 exports.getFeeBreakdown = async (period) => {
-  let query = supabaseAdmin
+  let query = supabase
     .from('bills')
-    .select('electric, water, service, vehicles, total, pre_debt');
+    .select('electric, water, service, vehicles, pre_debt, total_due');
   
   if (period) {
     query = query.eq('period', period);
@@ -371,7 +468,74 @@ exports.getFeeBreakdown = async (period) => {
 };
 
 /**
- * So sánh thu chi giữa các kỳ
+ * Thống kê phân loại Chi phí Bảo trì theo danh mục
+ */
+exports.getMaintenanceExpensesByCategory = async (period) => {
+  const reqs = await getNormalizedMaintenanceRequests();
+  
+  const filtered = period 
+    ? reqs.filter(r => r.normalized_period === period)
+    : reqs;
+
+  const catMap = {
+    electric: { id: 'electric', name: 'Hệ thống Điện', total: 0, count: 0, items: [] },
+    water: { id: 'water', name: 'Cấp thoát nước', total: 0, count: 0, items: [] },
+    infrastructure: { id: 'infrastructure', name: 'Hạ tầng & Xây dựng', total: 0, count: 0, items: [] },
+    mep: { id: 'mep', name: 'Thang máy & Cơ điện', total: 0, count: 0, items: [] },
+    other: { id: 'other', name: 'Bảo dưỡng & Sửa chữa khác', total: 0, count: 0, items: [] }
+  };
+
+  filtered.forEach(r => {
+    const catId = r.category_id in catMap ? r.category_id : 'other';
+    catMap[catId].total += r.resolved_cost;
+    catMap[catId].count += 1;
+    catMap[catId].items.push({
+      id: r.id,
+      apt_id: r.apt_id,
+      issue_description: r.issue_description,
+      cost: r.resolved_cost,
+      status: r.status,
+      completed_at: r.completed_at || r.created_at
+    });
+  });
+
+  const totalExpense = Object.values(catMap).reduce((sum, c) => sum + c.total, 0);
+
+  return {
+    period: period || 'Tất cả các kỳ',
+    total_expense: totalExpense,
+    total_requests: filtered.length,
+    breakdown: Object.values(catMap).map(c => ({
+      id: c.id,
+      name: c.name,
+      total: c.total,
+      count: c.count,
+      percentage: totalExpense > 0 ? Number(((c.total / totalExpense) * 100).toFixed(2)) : 0
+    })),
+    details: catMap
+  };
+};
+
+/**
+ * Lấy danh sách các khoản chi sửa chữa
+ */
+exports.getMaintenanceExpensesList = async (startPeriod, endPeriod, limit = 50) => {
+  const reqs = await getNormalizedMaintenanceRequests();
+  let filtered = reqs;
+
+  if (startPeriod && endPeriod) {
+    filtered = filtered.filter(r => r.normalized_period >= startPeriod && r.normalized_period <= endPeriod);
+  }
+
+  return {
+    total: filtered.length,
+    total_cost: filtered.reduce((sum, r) => sum + r.resolved_cost, 0),
+    data: filtered.slice(0, limit)
+  };
+};
+
+/**
+ * So sánh tài chính giữa các kỳ: Thu, Chi và Lợi nhuận
  */
 exports.comparePeriodsFinancial = async (period1, period2) => {
   const [data1, data2] = await Promise.all([
@@ -386,7 +550,12 @@ exports.comparePeriodsFinancial = async (period1, period2) => {
       income_change: data2.total_income - data1.total_income,
       income_change_percent: data1.total_income > 0 
         ? (((data2.total_income - data1.total_income) / data1.total_income) * 100).toFixed(2) + '%'
-        : 'N/A',
+        : '0%',
+      expense_change: data2.total_expense - data1.total_expense,
+      expense_change_percent: data1.total_expense > 0 
+        ? (((data2.total_expense - data1.total_expense) / data1.total_expense) * 100).toFixed(2) + '%'
+        : '0%',
+      net_profit_change: data2.net_balance - data1.net_balance,
       charges_change: data2.total_charges - data1.total_charges,
       debt_change: data2.total_debt - data1.total_debt
     }
@@ -395,24 +564,18 @@ exports.comparePeriodsFinancial = async (period1, period2) => {
 
 /**
  * Tổng hợp dữ liệu một kỳ
- * @param {string} period - Format YYYY-MM
  */
 exports.getPeriodSummary = async (period) => {
-  // Both bills and payments use period as TEXT (YYYY-MM format)
-  // Query payments directly using the period string
   const { data: payments, error: payError } = await supabase
     .from('payments')
     .select('amount, period')
     .eq('period', period);
 
-  if (payError) {
-    console.error('Error fetching payments:', payError);
-    throw payError;
-  }
+  if (payError) throw payError;
 
   const { data: bills, error: billError } = await supabase
     .from('bills')
-    .select('electric, water, service, vehicles, pre_debt, total')
+    .select('electric, water, service, vehicles, pre_debt, total_due, paid, status')
     .eq('period', period);
 
   if (billError) throw billError;
@@ -423,27 +586,39 @@ exports.getPeriodSummary = async (period) => {
   let totalDebt = 0;
 
   (bills || []).forEach(b => {
-    // Calculate new charges as total - pre_debt (since total = new charges + pre_debt)
-    const newCharges = Number(b.total || 0) - Number(b.pre_debt || 0);
-    totalCharges += newCharges;
-    totalDebt += Number(b.pre_debt || 0);
+    const charges = Number(b.electric || 0) + Number(b.water || 0) + Number(b.service || 0) + Number(b.vehicles || 0);
+    const due = Number(b.total_due) || (charges + Number(b.pre_debt || 0));
+    totalCharges += charges;
+    if (!b.paid && b.status !== 'paid') {
+      totalDebt += due;
+    }
   });
 
+  // Chi phí bảo trì trong kỳ
+  const maintenanceReqs = await getNormalizedMaintenanceRequests();
+  const periodMaintenance = maintenanceReqs.filter(r => r.normalized_period === period);
+  const totalExpense = periodMaintenance.reduce((sum, r) => sum + r.resolved_cost, 0);
+
+  const netBalance = totalIncome - totalExpense;
+
   return {
-    period, // Return the input period format (YYYY-MM)
-    total_income: totalIncome,
+    period,
+    total_income: totalIncome,                 // Thu từ hóa đơn
+    total_expense: totalExpense,               // Chi cho sửa chữa/bảo trì
+    net_balance: netBalance,                   // Kết dư quỹ
     total_charges: totalCharges,
     total_debt: totalDebt,
     collection_rate: totalCharges > 0 
       ? ((totalIncome / totalCharges) * 100).toFixed(2) + '%'
       : '0%',
     bill_count: bills?.length || 0,
-    payment_count: payments?.length || 0
+    payment_count: payments?.length || 0,
+    maintenance_count: periodMaintenance.length
   };
 };
 
 /**
- * Thống kê tỷ lệ thu theo tháng (cho chart)
+ * Thống kê tỷ lệ thu theo tháng
  */
 exports.getCollectionRateByPeriod = async (startPeriod, endPeriod) => {
   const periods = await exports.getIncomeByPeriod(startPeriod, endPeriod);
@@ -451,16 +626,17 @@ exports.getCollectionRateByPeriod = async (startPeriod, endPeriod) => {
   return periods.map(p => ({
     period: p.period,
     collection_rate: p.total_charges > 0 
-      ? ((p.total_income / p.total_charges) * 100).toFixed(2)
+      ? Number(((p.total_income / p.total_charges) * 100).toFixed(2))
       : 0,
     total_income: p.total_income,
+    total_expense: p.total_expense,
+    net_profit: p.net_profit,
     total_charges: p.total_charges || 0
   }));
 };
 
 /**
- * 3.1.1 Biểu đồ tăng trưởng doanh thu
- * Tính tốc độ tăng trưởng theo tháng
+ * Biểu đồ tăng trưởng doanh thu
  */
 exports.getRevenueGrowth = async (startPeriod, endPeriod) => {
   const periods = await exports.getIncomeByPeriod(startPeriod, endPeriod);
@@ -475,14 +651,16 @@ exports.getRevenueGrowth = async (startPeriod, endPeriod) => {
     return {
       period: p.period,
       total_income: p.total_income,
-      growth_rate: growth,
+      total_expense: p.total_expense,
+      net_profit: p.net_profit,
+      growth_rate: Number(growth),
       previous_income: index > 0 ? periods[index - 1].total_income : 0
     };
   });
 };
 
 /**
- * 3.1.2 Doanh thu theo loại phí (chi tiết từng loại)
+ * Doanh thu theo loại phí
  */
 exports.getRevenueByFeeType = async (period) => {
   let query = supabase
@@ -511,19 +689,19 @@ exports.getRevenueByFeeType = async (period) => {
       floor: 'N/A'
     };
 
-    if (b.electric > 0) {
+    if (Number(b.electric) > 0) {
       feeTypes.electric.total += Number(b.electric);
       feeTypes.electric.apartments.push({ ...apt_info, amount: b.electric });
     }
-    if (b.water > 0) {
+    if (Number(b.water) > 0) {
       feeTypes.water.total += Number(b.water);
       feeTypes.water.apartments.push({ ...apt_info, amount: b.water });
     }
-    if (b.service > 0) {
+    if (Number(b.service) > 0) {
       feeTypes.service.total += Number(b.service);
       feeTypes.service.apartments.push({ ...apt_info, amount: b.service });
     }
-    if (b.vehicles > 0) {
+    if (Number(b.vehicles) > 0) {
       feeTypes.vehicles.total += Number(b.vehicles);
       feeTypes.vehicles.apartments.push({ ...apt_info, amount: b.vehicles });
     }
@@ -538,7 +716,7 @@ exports.getRevenueByFeeType = async (period) => {
       type: key,
       name: value.name,
       total: value.total,
-      percentage: totalRevenue > 0 ? ((value.total / totalRevenue) * 100).toFixed(2) : 0,
+      percentage: totalRevenue > 0 ? Number(((value.total / totalRevenue) * 100).toFixed(2)) : 0,
       apartment_count: value.apartments.length
     })),
     details: feeTypes
@@ -546,7 +724,7 @@ exports.getRevenueByFeeType = async (period) => {
 };
 
 /**
- * 3.1.3 Phân tích doanh thu theo tầng/khu
+ * Phân tích doanh thu theo tầng
  */
 exports.getRevenueByFloorOrArea = async (period, groupBy = 'floor') => {
   let query = supabase
@@ -564,12 +742,9 @@ exports.getRevenueByFloorOrArea = async (period, groupBy = 'floor') => {
   const groupMap = {};
 
   (bills || []).forEach(b => {
-    // Extract floor from apt_id (e.g., "501" -> floor 5)
-    const aptNumber = b.apt_id.toString();
+    const aptNumber = b.apt_id ? b.apt_id.toString() : '';
     const floor = aptNumber.length >= 2 ? aptNumber.substring(0, aptNumber.length - 2) || '0' : '0';
-    const groupKey = groupBy === 'floor' 
-      ? floor
-      : 'Khu A';
+    const groupKey = groupBy === 'floor' ? floor : 'Khu A';
     
     if (!groupMap[groupKey]) {
       groupMap[groupKey] = {
@@ -600,9 +775,7 @@ exports.getRevenueByFloorOrArea = async (period, groupBy = 'floor') => {
     });
   });
 
-  const result = Object.values(groupMap)
-    .sort((a, b) => b.total_revenue - a.total_revenue);
-
+  const result = Object.values(groupMap).sort((a, b) => b.total_revenue - a.total_revenue);
   const totalRevenue = result.reduce((sum, g) => sum + g.total_revenue, 0);
 
   return {
@@ -611,23 +784,23 @@ exports.getRevenueByFloorOrArea = async (period, groupBy = 'floor') => {
     total_revenue: totalRevenue,
     groups: result.map(g => ({
       ...g,
-      percentage: totalRevenue > 0 ? ((g.total_revenue / totalRevenue) * 100).toFixed(2) : 0,
+      percentage: totalRevenue > 0 ? Number(((g.total_revenue / totalRevenue) * 100).toFixed(2)) : 0,
       average_per_apartment: g.apartment_count > 0 
-        ? (g.total_revenue / g.apartment_count).toFixed(0)
+        ? Number((g.total_revenue / g.apartment_count).toFixed(0))
         : 0
     }))
   };
 };
 
 /**
- * 3.2.1 Lọc căn hộ chưa đóng phí (có thể lọc theo kỳ, tầng, mức nợ)
+ * Lọc căn hộ chưa đóng phí
  */
 exports.getUnpaidApartments = async (filters = {}) => {
   const { period, floor, min_debt, max_debt, sort_by = 'debt', sort_order = 'desc', offset = 0, limit = 50 } = filters;
 
   let query = supabase
     .from('bills')
-    .select('apt_id, period, electric, water, service, vehicles, pre_debt, total');
+    .select('apt_id, period, electric, water, service, vehicles, pre_debt, total_due, paid, status');
 
   if (period) {
     query = query.eq('period', period);
@@ -637,30 +810,27 @@ exports.getUnpaidApartments = async (filters = {}) => {
 
   if (error) throw error;
 
-  // Get all payments
   const { data: payments, error: payError } = await supabase
     .from('payments')
     .select('apt_id, period, amount');
 
   if (payError) throw payError;
 
-  // Calculate paid amount for each apartment-period
   const paidMap = {};
   (payments || []).forEach(p => {
     const key = `${p.apt_id}-${p.period}`;
     paidMap[key] = (paidMap[key] || 0) + Number(p.amount || 0);
   });
 
-  // Filter unpaid apartments
   let unpaidList = (bills || [])
     .map(b => {
       const key = `${b.apt_id}-${b.period}`;
-      const totalBill = Number(b.total || 0);
-      const paid = paidMap[key] || 0;
+      const charges = Number(b.electric || 0) + Number(b.water || 0) + Number(b.service || 0) + Number(b.vehicles || 0);
+      const totalBill = Number(b.total_due) || (charges + Number(b.pre_debt || 0));
+      const paid = b.paid ? totalBill : (paidMap[key] || 0);
       const unpaid = totalBill - paid;
       
-      // Extract floor from apt_id
-      const aptNumber = b.apt_id.toString();
+      const aptNumber = b.apt_id ? b.apt_id.toString() : '';
       const aptFloor = aptNumber.length >= 2 ? parseInt(aptNumber.substring(0, aptNumber.length - 2)) || 0 : 0;
 
       return {
@@ -678,26 +848,21 @@ exports.getUnpaidApartments = async (filters = {}) => {
         water: Number(b.water || 0),
         service: Number(b.service || 0),
         vehicles: Number(b.vehicles || 0),
-        payment_status: unpaid <= 0 ? 'Đã thanh toán' : unpaid < totalBill ? 'Thanh toán một phần' : 'Chưa thanh toán'
+        payment_status: b.paid || unpaid <= 0 ? 'Đã thanh toán' : paid > 0 ? 'Thanh toán một phần' : 'Chưa thanh toán'
       };
     })
-    .filter(a => a.unpaid_amount > 0); // Only unpaid apartments
+    .filter(a => a.unpaid_amount > 0);
 
-  // Apply floor filter if specified
   if (floor !== undefined) {
     unpaidList = unpaidList.filter(a => a.floor === floor);
   }
-
-  // Apply debt range filters
   if (min_debt !== undefined) {
     unpaidList = unpaidList.filter(a => a.unpaid_amount >= min_debt);
   }
-
   if (max_debt !== undefined) {
     unpaidList = unpaidList.filter(a => a.unpaid_amount <= max_debt);
   }
 
-  // Sort
   unpaidList.sort((a, b) => {
     const aValue = sort_by === 'debt' ? a.unpaid_amount : a[sort_by];
     const bValue = sort_by === 'debt' ? b.unpaid_amount : b[sort_by];
@@ -719,12 +884,12 @@ exports.getUnpaidApartments = async (filters = {}) => {
 };
 
 /**
- * 3.2.2 Tính tổng nợ dư kiện (tổng hợp toàn bộ)
+ * Tính tổng nợ tồn đọng
  */
 exports.getTotalOutstandingDebt = async () => {
   const { data: bills, error: billError } = await supabase
     .from('bills')
-    .select('apt_id, period, electric, water, service, vehicles, pre_debt, total');
+    .select('apt_id, period, electric, water, service, vehicles, pre_debt, total_due, paid, status');
 
   if (billError) throw billError;
 
@@ -734,7 +899,6 @@ exports.getTotalOutstandingDebt = async () => {
 
   if (payError) throw payError;
 
-  // Calculate paid amount for each apartment-period
   const paidMap = {};
   (payments || []).forEach(p => {
     const key = `${p.apt_id}-${p.period}`;
@@ -743,13 +907,14 @@ exports.getTotalOutstandingDebt = async () => {
 
   let totalOutstanding = 0;
   let totalPreDebt = 0;
-  let apartmentsWithDebt = new Set();
+  const apartmentsWithDebt = new Set();
   const debtByPeriod = {};
 
   (bills || []).forEach(b => {
     const key = `${b.apt_id}-${b.period}`;
-    const totalBill = Number(b.total || 0);
-    const paid = paidMap[key] || 0;
+    const charges = Number(b.electric || 0) + Number(b.water || 0) + Number(b.service || 0) + Number(b.vehicles || 0);
+    const totalBill = Number(b.total_due) || (charges + Number(b.pre_debt || 0));
+    const paid = b.paid ? totalBill : (paidMap[key] || 0);
     const unpaid = totalBill - paid;
 
     if (unpaid > 0) {
@@ -779,14 +944,14 @@ exports.getTotalOutstandingDebt = async () => {
 };
 
 /**
- * 3.2.3 Theo dõi lịch sử trả nợ của một căn hộ
+ * Theo dõi lịch sử trả nợ của căn hộ
  */
 exports.getDebtPaymentHistory = async (apt_id) => {
   const { data: payments, error: payError } = await supabase
     .from('payments')
     .select('*')
     .eq('apt_id', apt_id)
-    .order('paid_at', { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (payError) throw payError;
 
@@ -798,17 +963,15 @@ exports.getDebtPaymentHistory = async (apt_id) => {
 
   if (billError) throw billError;
 
-  // Calculate payment history with running debt balance
   const history = [];
   let runningDebt = 0;
 
-  // Combine bills and payments by period
   const periods = new Set([
     ...(bills || []).map(b => b.period),
     ...(payments || []).map(p => p.period)
   ]);
 
-  Array.from(periods).sort((a, b) => a.localeCompare(b)).forEach(period => {
+  Array.from(periods).filter(Boolean).sort((a, b) => a.localeCompare(b)).forEach(period => {
     const periodBills = (bills || []).filter(b => b.period === period);
     const periodPayments = (payments || []).filter(p => p.period === period);
 
@@ -837,50 +1000,40 @@ exports.getDebtPaymentHistory = async (apt_id) => {
   return {
     apt_id,
     current_debt: runningDebt > 0 ? runningDebt : 0,
-    history: history.reverse() // Most recent first
+    history: history.reverse()
   };
 };
 
 /**
- * 3.3.1 Tổng hợp thu chi tháng (báo cáo quyết toán)
+ * Báo cáo quyết toán toàn diện Thu (Hóa đơn) - Chi (Bảo trì/Sửa chữa) - Kết dư
  */
 exports.getMonthlySettlementReport = async (period) => {
-  console.log('[Settlement] Starting report for period:', period);
-  
-  console.log('[Settlement] Fetching period summary...');
   const summary = await exports.getPeriodSummary(period);
-  console.log('[Settlement] Period summary OK');
-  
-  console.log('[Settlement] Fetching fee breakdown...');
   const feeBreakdown = await exports.getFeeBreakdown(period);
-  console.log('[Settlement] Fee breakdown OK');
-  
-  console.log('[Settlement] Fetching floor data...');
+  const expenseBreakdown = await exports.getMaintenanceExpensesByCategory(period);
   const floorData = await exports.getFinancialByFloor();
-  console.log('[Settlement] Floor data OK');
   
   const { data: bills, error: billError } = await supabase
     .from('bills')
-    .select('apt_id, electric, water, service, vehicles, total, pre_debt')
+    .select('apt_id, electric, water, service, vehicles, total_due, pre_debt, paid, status')
     .eq('period', period);
 
   if (billError) throw billError;
 
   const { data: payments, error: payError } = await supabase
     .from('payments')
-    .select('apt_id, amount, paid_at, method')
+    .select('apt_id, amount, created_at, payment_method')
     .eq('period', period);
 
   if (payError) throw payError;
 
-  // Calculate apartment-level details
   const apartmentDetails = (bills || []).map(b => {
     const aptPayments = (payments || []).filter(p => p.apt_id === b.apt_id);
-    const totalPaid = aptPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-    const totalBill = Number(b.total || 0);
+    const charges = Number(b.electric || 0) + Number(b.water || 0) + Number(b.service || 0) + Number(b.vehicles || 0);
+    const totalBill = Number(b.total_due) || (charges + Number(b.pre_debt || 0));
+    const totalPaid = b.paid ? totalBill : aptPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
     
-    // Extract floor from apt_id
-    const aptNumber = b.apt_id.toString();
+    const aptNumber = b.apt_id ? b.apt_id.toString() : '';
     const floor = aptNumber.length >= 2 ? parseInt(aptNumber.substring(0, aptNumber.length - 2)) || 0 : 0;
 
     return {
@@ -896,28 +1049,42 @@ exports.getMonthlySettlementReport = async (period) => {
       total_bill: totalBill,
       total_paid: totalPaid,
       balance: totalBill - totalPaid,
-      status: totalPaid >= totalBill ? 'Đã thanh toán' : totalPaid > 0 ? 'Thanh toán một phần' : 'Chưa thanh toán'
+      status: b.paid || totalPaid >= totalBill ? 'Đã thanh toán' : totalPaid > 0 ? 'Thanh toán một phần' : 'Chưa thanh toán'
     };
   });
+
+  // Lấy chi tiết các đợt sửa chữa trong kỳ này
+  const maintenanceReqs = await getNormalizedMaintenanceRequests();
+  const periodMaintenance = maintenanceReqs.filter(r => r.normalized_period === period);
 
   return {
     period,
     generated_at: new Date().toISOString(),
     summary: {
       ...summary,
-      fee_breakdown: feeBreakdown
+      fee_breakdown: feeBreakdown,
+      expense_breakdown: expenseBreakdown
     },
-    by_floor: floorData.filter(f => {
-      // Only include floors with data in this period
-      return apartmentDetails.some(a => a.floor === f.floor);
-    }),
+    by_floor: floorData,
     apartments: apartmentDetails,
+    maintenance_items: periodMaintenance.map(m => ({
+      id: m.id,
+      apt_id: m.apt_id || 'Khu vực chung',
+      resident_name: m.resident_name || 'N/A',
+      issue_description: m.issue_description,
+      category_name: m.category_name,
+      cost: m.resolved_cost,
+      status: m.status,
+      completed_at: m.completed_at || m.created_at
+    })),
     statistics: {
       total_apartments: apartmentDetails.length,
       paid_apartments: apartmentDetails.filter(a => a.status === 'Đã thanh toán').length,
       partial_paid: apartmentDetails.filter(a => a.status === 'Thanh toán một phần').length,
       unpaid_apartments: apartmentDetails.filter(a => a.status === 'Chưa thanh toán').length,
-      total_outstanding: apartmentDetails.reduce((sum, a) => sum + (a.balance > 0 ? a.balance : 0), 0)
+      total_outstanding: apartmentDetails.reduce((sum, a) => sum + (a.balance > 0 ? a.balance : 0), 0),
+      total_maintenance_count: periodMaintenance.length,
+      total_maintenance_cost: summary.total_expense
     }
   };
 };
