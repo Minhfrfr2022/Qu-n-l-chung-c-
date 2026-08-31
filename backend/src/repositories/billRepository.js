@@ -98,11 +98,20 @@ class BillRepository {
 
         if(filter) {
             Object.entries(filter).forEach(([key, value]) => {
-                res = res.eq(key, value);
-            })
+                if (value !== undefined && value !== null && value !== '' && value !== 'all') {
+                    if (key === 'status') {
+                        if (value === 'paid') res = res.or('status.eq.paid,paid.eq.true');
+                        else if (value === 'unpaid') res = res.or('status.eq.unpaid,paid.eq.false,paid.is.null');
+                    } else if (key === 'search') {
+                        res = res.or(`apt_id.ilike.%${value}%,owner.ilike.%${value}%`);
+                    } else {
+                        res = res.eq(key, value);
+                    }
+                }
+            });
         }
 
-        res = res.order('apt_id', {ascending: true}).range(start, end);
+        res = res.order('period', {ascending: false}).order('apt_id', {ascending: true}).range(start, end);
         const final = await res;
         return final;
     }
@@ -112,10 +121,20 @@ class BillRepository {
         .from('bills')
         .select('*', {count: 'exact', head: true});
 
-        if(filter)
-        Object.entries(filter).forEach(([key, value]) => {
-            query = query.eq(key, value);
-        })
+        if(filter) {
+            Object.entries(filter).forEach(([key, value]) => {
+                if (value !== undefined && value !== null && value !== '' && value !== 'all') {
+                    if (key === 'status') {
+                        if (value === 'paid') query = query.or('status.eq.paid,paid.eq.true');
+                        else if (value === 'unpaid') query = query.or('status.eq.unpaid,paid.eq.false,paid.is.null');
+                    } else if (key === 'search') {
+                        query = query.or(`apt_id.ilike.%${value}%,owner.ilike.%${value}%`);
+                    } else {
+                        query = query.eq(key, value);
+                    }
+                }
+            });
+        }
 
         const res = await query;
         return res;

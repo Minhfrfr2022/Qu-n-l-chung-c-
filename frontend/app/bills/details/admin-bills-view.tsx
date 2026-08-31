@@ -82,6 +82,20 @@ export function AdminBillsView() {
 
   const itemsPerPage = 10;
 
+  const fetchSummary = async (periodToUse?: string | null) => {
+    const p = periodToUse || filterPeriod;
+    if (!p) return;
+    try {
+      const summary = await billsAPI.getPeriodSummary(p);
+      if (summary && summary.total_due !== undefined) {
+        setTotalToCollect(Number(summary.total_due || 0));
+        setTotalCollected(Number(summary.total_received || 0));
+      }
+    } catch (e) {
+      console.warn('Failed to fetch period summary', e);
+    }
+  };
+
   const fetchBills = async() => {
     let filter: any = {};
     if(searchApartment) filter.apt_id = searchApartment;
@@ -93,48 +107,16 @@ export function AdminBillsView() {
     setErrorFetchBills(null);
     try {
       const res = await api.query_bill_with_filter(filter, currentPage, itemsPerPage);
-      const bills = res.data;
-
-      // Calculate totals from bills data
-      let totalDue = 0;  // Tổng cần thu (chưa thu)
-      let totalPaid = 0; // Tổng đã thu
-
-      for(const bill of bills) {
-        const billTotal = Number(bill.electric || 0) + Number(bill.water || 0) +
-                         Number(bill.pre_debt || 0) + Number(bill.vehicles || 0) +
-                         Number(bill.service || 0);
-
-        if (bill.paid) {
-          totalPaid += billTotal;
-        } else {
-          totalDue += billTotal;
-        }
-      }
-
-      setTotalToCollect(totalDue);
-      setTotalCollected(totalPaid);
-
-      // If period is selected, try to get more accurate totals from backend
-      if (filterPeriod) {
-        try {
-          const summary = await billsAPI.getPeriodSummary(filterPeriod);
-          if (summary.total_due !== undefined) setTotalToCollect(Number(summary.total_due || 0));
-          if (summary.total_received !== undefined) setTotalCollected(Number(summary.total_received || 0));
-        } catch (e) {
-          console.warn('Failed to fetch period summary, using calculated totals', e);
-        }
-      }
-
-      setCurrentBills(bills);
-      setTotalPages(res.total_pages);
+      setCurrentBills(res.data || []);
+      setTotalPages(res.total_pages || 1);
     }
-    catch(error) {
+    catch(error: any) {
       setErrorFetchBills(error.message);
       console.log("Fetch error: ", error.message);
     } finally {
       setLoadingBills(false);
     }
-  }
+  };
 
   const fetchAnalytics = async() => {
     setLoadingStats(true);
@@ -171,11 +153,15 @@ export function AdminBillsView() {
     }
   };
 
-
-
   useEffect(() => {
     fetchBills();
-  }, [currentPage, totalPages, searchApartment, searchOwner, totalCollected, totalToCollect, filterPeriod, filterStatus]);
+  }, [currentPage, searchApartment, searchOwner, filterPeriod, filterStatus]);
+
+  useEffect(() => {
+    if (filterPeriod) {
+      fetchSummary(filterPeriod);
+    }
+  }, [filterPeriod]);
 
   useEffect(() => {
     if (showAnalytics) {
@@ -183,13 +169,17 @@ export function AdminBillsView() {
     }
   }, [showAnalytics, filterPeriod]);
 
-  // load available periods
+  // load available periods and default to latest
   useEffect(() => {
     (async () => {
       try {
         const resp = await billsAPI.getAvailablePeriods();
         const periods = resp?.periods || [];
         setAvailablePeriods(periods);
+        if (periods.length > 0 && !filterPeriod) {
+          setFilterPeriod(periods[0]);
+          fetchSummary(periods[0]);
+        }
       } catch (e) {
         console.error('Failed to load periods', e);
       }
@@ -208,17 +198,24 @@ export function AdminBillsView() {
 
   const handleResetBill = async(bill: Bill) => {
     try {
+      const billTotal = Number(bill.total_due) || (
+        Number(bill.electric || 0) + 
+        Number(bill.water || 0) + 
+        Number(bill.pre_debt || 0) + 
+        Number(bill.vehicles || 0) + 
+        Number(bill.service || 0)
+      );
       // Mark bill as paid (backend records payment and updates totals)
       await api.reset_bill(bill.apt_id, bill.period);
       // Refresh list and aggregates
       await fetchBills();
+      if (bill.period) await fetchSummary(bill.period);
+      alert(`Đã đánh dấu là 'Đã thu' cho căn hộ ${bill.apt_id} (kỳ ${bill.period || '-'})`);
     }
-    catch(error) {
+    catch(error: any) {
       console.log(error.message);
     }
-
-    alert(`Đã đánh dấu là 'Đã thu' cho căn hộ ${bill.apt_id} (kỳ ${bill.period || '-'})`)
-  }
+  };
 
   const handleSaveEdit = async(updatedBill: Bill) => {
     try {
@@ -316,7 +313,15 @@ export function AdminBillsView() {
                 🚰 Gửi số liệu
               </button>
             </div>
-            <SubmitBillsModal isOpen={showSubmitModal} onClose={() => setShowSubmitModal(false)} period={filterPeriod} onSubmitted={fetchBills} />
+            <SubmitBillsModal 
+              isOpen={showSubmitModal} 
+              onClose={() => setShowSubmitModal(false)} 
+              period={filterPeriod} 
+              onSubmitted={async () => {
+                await fetchBills();
+                if (filterPeriod) await fetchSummary(filterPeriod);
+              }} 
+            />
           </div>
 
           {/* Analytics Section */}

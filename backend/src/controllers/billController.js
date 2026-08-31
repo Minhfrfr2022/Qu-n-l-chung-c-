@@ -3,7 +3,7 @@ const{BillRepository} = require("../repositories/billRepository")
 const {PAGE_SIZE} = require("../utils/constants");
 const { supabaseAdmin } = require("../config/supabase");
 
-const { sendPushToUser, sendPushToAll, PRIORITY, CATEGORY } = require('../services/fcmService');
+const { sendPushToUser, sendPushToAll, sendNotificationToAdmins, PRIORITY, CATEGORY } = require('../services/fcmService');
 
 // Helper function to create notifications (DB Inbox + FCM Push)
 const createNotification = async (userId, type, title, message, link = null, metadata = null) => {
@@ -25,14 +25,35 @@ const createNotification = async (userId, type, title, message, link = null, met
 // Helper function to get apartment owner's user ID
 const getApartmentOwnerUserId = async (apt_id) => {
   try {
-    const { data, error } = await supabaseAdmin
-      .from('apartments')
-      .select('owner_id')
-      .eq('apt_id', apt_id)
-      .single();
+    const cleanApt = String(apt_id).trim().toUpperCase();
 
-    if (error) throw error;
-    return data?.owner_id;
+    // 1. Check profiles by apartment_number first (guaranteed valid auth user)
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('apartment_number', cleanApt)
+      .limit(1)
+      .maybeSingle();
+
+    if (profile?.id) return profile.id;
+
+    // 2. Check apartments table
+    const { data } = await supabaseAdmin
+      .from('apartments')
+      .select('owner_id, owner_email')
+      .eq('apt_id', cleanApt)
+      .maybeSingle();
+
+    if (data?.owner_email) {
+      const { data: profileByEmail } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('email', data.owner_email.toLowerCase())
+        .maybeSingle();
+      if (profileByEmail?.id) return profileByEmail.id;
+    }
+
+    return null;
   } catch (error) {
     console.error('Error fetching apartment owner:', error);
     return null;
@@ -839,11 +860,13 @@ class BillController {
         }
     }
 
-    // Residents submit their measured units for services (e.g., water, parking)
+    // Residents / Admin submit their measured units for services (e.g., water, parking)
     async submitUnits(req, res) {
         try {
             const { apt_id, units, period: reqPeriod } = req.body; // units: [{ name, units }]
-            const userId = req.user?.id || null;
+            const user = req.user;
+            const userId = user?.id || null;
+            const isAdmin = user?.role === 'admin' || user?.role === 'manager';
 
             if (!apt_id || !units || !Array.isArray(units)) {
                 throw new Error('apt_id and units array are required');
@@ -869,12 +892,25 @@ class BillController {
                 svcMap[s.name.toString().toLowerCase()] = s;
             });
 
-            // Fetch existing bill for apt to combine totals
-            const { data: existingBills, error: fetchBillErr } = await this.repo.query(apt_id);
-            let existing = null;
-            if (!fetchBillErr && existingBills && existingBills.length > 0) existing = existingBills[0];
+            const dbAptId = String(apt_id).trim().toUpperCase();
+            const usedPeriod = reqPeriod || (config && config.period) || new Date().toISOString().slice(0, 7);
 
-            const updateObj = { apt_id };
+            // Fetch existing bill for apt & period to combine totals
+            const { data: existingBillData } = await supabaseAdmin
+                .from('bills')
+                .select('*')
+                .eq('apt_id', dbAptId)
+                .eq('period', usedPeriod)
+                .maybeSingle();
+
+            const existing = existingBillData || null;
+
+            const updateObj = { 
+                apt_id: dbAptId,
+                period: usedPeriod,
+                status: existing?.status || 'unpaid',
+                paid: existing?.paid || false
+            };
             let addedTotal = 0;
 
             for (const u of units) {
@@ -890,59 +926,65 @@ class BillController {
 
                 // update common numeric fields
                 if (['điện','dien','electric','electricity'].some(k => key.includes(k))) {
-                    updateObj.electric = (Number(existing?.electric) || 0) + amount;
+                    updateObj.electric = amount;
                 } else if (['nước','nuoc','water'].some(k => key.includes(k))) {
-                    updateObj.water = (Number(existing?.water) || 0) + amount;
+                    updateObj.water = amount;
                 } else if (['xe','vehicle','vehicles'].some(k => key.includes(k))) {
-                    updateObj.vehicles = (Number(existing?.vehicles) || 0) + amount;
+                    updateObj.vehicles = amount;
                 } else if (['vệ sinh','vesinh','ve sinh','service','services'].some(k => key.includes(k))) {
-                    updateObj.service = (Number(existing?.service) || 0) + amount;
-                }
-            }
-
-            // Attach period: prefer request-specified period, fall back to active configuration period
-            updateObj.period = reqPeriod || (config && config.period) || null;
-
-            // Compute new total: start from existing total (if any) minus any previous per-resident amounts for the same services, then add new
-            let baseTotal = 0;
-            if (existing) {
-                for (const [k, v] of Object.entries(existing)) {
-                    if (k.endsWith('_amount') || k.endsWith('_units')) continue;
-                    if (k === 'total') continue;
-                    if (typeof v === 'number') baseTotal += v;
+                    updateObj.service = amount;
                 }
             }
 
             // Ensure apartment exists or auto-create it
-            const aptRecord = await ensureApartmentExists(apt_id);
+            const aptRecord = await ensureApartmentExists(dbAptId);
             if (!aptRecord) {
                 return res.status(400).json({ message: `Không thể tìm thấy hoặc tự động tạo căn hộ: ${apt_id}` });
             }
 
-            const dbAptId = aptRecord.apt_id;
-            updateObj.apt_id = dbAptId;
-
             // Ensure owner is set (use existing bill owner or apartment.owner_name)
-            if (!updateObj.owner) updateObj.owner = (existing && existing.owner) || aptRecord.owner_name || '';
+            updateObj.owner = (existing && existing.owner) || (aptRecord && aptRecord.owner_name) || user?.fullName || user?.username || 'Cư dân';
+
+            // Calculate total_due
+            const totalElectric = updateObj.electric !== undefined ? updateObj.electric : (existing?.electric || 0);
+            const totalWater = updateObj.water !== undefined ? updateObj.water : (existing?.water || 0);
+            const totalService = updateObj.service !== undefined ? updateObj.service : (existing?.service || 0);
+            const totalVehicles = updateObj.vehicles !== undefined ? updateObj.vehicles : (existing?.vehicles || 0);
+            const preDebt = existing?.pre_debt || 0;
+            updateObj.total_due = totalElectric + totalWater + totalService + totalVehicles + preDebt;
 
             // Upsert bill record for the apartment
             const { data: upserted, error: upsertErr } = await this.repo.upsert(updateObj);
             if (upsertErr) throw new Error(upsertErr.message);
 
-            // Notify apartment owner that their units were recorded
+            // 2-way notifications:
+            // 1. If resident submitted -> notify Admins
+            if (!isAdmin) {
+                sendNotificationToAdmins({
+                    type: 'info',
+                    title: 'Số liệu tiêu thụ mới',
+                    message: `Căn hộ ${dbAptId} vừa gửi số liệu tiêu thụ kỳ ${usedPeriod}. Tổng tiền: ${updateObj.total_due?.toLocaleString('vi-VN')} đ.`,
+                    link: '/bills',
+                    metadata: { apt_id: dbAptId, period: usedPeriod, total_due: updateObj.total_due },
+                    category: CATEGORY.BILLS,
+                    priority: PRIORITY.IMPORTANT
+                }).catch(console.error);
+            }
+
+            // 2. Notify apartment owner/resident
             const ownerId = await getApartmentOwnerUserId(dbAptId);
             if (ownerId) {
                 await createNotification(
                     ownerId,
                     'info',
                     'Số liệu tiêu thụ đã được ghi nhận',
-                    `Số liệu tiêu thụ cho căn hộ ${dbAptId} đã được cập nhật. Tổng cộng thêm: ${addedTotal?.toLocaleString('vi-VN')}đ`,
-                    '/payments',
-                    { apt_id: dbAptId, addedTotal }
+                    `Số liệu tiêu thụ kỳ ${usedPeriod} cho căn hộ ${dbAptId} đã được cập nhật. Tổng tiền: ${updateObj.total_due?.toLocaleString('vi-VN')} đ.`,
+                    '/bills',
+                    { apt_id: dbAptId, period: usedPeriod, total_due: updateObj.total_due }
                 );
             }
 
-            return res.status(200).json({ message: 'Units submitted', data: upserted, addedTotal });
+            return res.status(200).json({ message: 'Units submitted', data: upserted, addedTotal, total_due: updateObj.total_due });
         } catch (error) {
             return res.status(500).json({ message: error.message });
         }
@@ -974,27 +1016,38 @@ class BillController {
             });
 
             const processed = [];
+            const usedPeriod = (req.body && req.body.period) || (config && config.period) || new Date().toISOString().slice(0, 7);
 
             for (const r of rows) {
                 const apt_id = r.apt_id || r.aptId || r.apartment || null;
                 const services = Array.isArray(r.services) ? r.services : [];
                 if (!apt_id) continue;
 
+                const dbAptId = String(apt_id).trim().toUpperCase();
+
                 // Ensure apartment exists or auto-create it
-                const aptRecord = await ensureApartmentExists(apt_id);
+                const aptRecord = await ensureApartmentExists(dbAptId);
                 if (!aptRecord) {
-                    processed.push({ apt_id, status: 'error', message: `Không thể tạo hoặc tìm căn hộ: ${apt_id}` });
+                    processed.push({ apt_id: dbAptId, status: 'error', message: `Không thể tạo hoặc tìm căn hộ: ${apt_id}` });
                     continue;
                 }
 
-                const dbAptId = aptRecord.apt_id;
-
                 // fetch existing
-                const { data: existingBills, error: fetchBillErr } = await this.repo.query(dbAptId);
-                let existing = null;
-                if (!fetchBillErr && existingBills && existingBills.length > 0) existing = existingBills[0];
+                const { data: existingBills } = await supabaseAdmin
+                    .from('bills')
+                    .select('*')
+                    .eq('apt_id', dbAptId)
+                    .eq('period', usedPeriod)
+                    .maybeSingle();
 
-                const updateObj = { apt_id: dbAptId };
+                const existing = existingBills || null;
+
+                const updateObj = { 
+                    apt_id: dbAptId,
+                    period: usedPeriod,
+                    status: existing?.status || 'unpaid',
+                    paid: existing?.paid || false
+                };
                 let addedTotal = 0;
 
                 for (const s of services) {
@@ -1009,21 +1062,26 @@ class BillController {
 
                     // set numeric fields for common services
                     if (['điện','dien','electric','electricity'].some(k => key.includes(k))) {
-                        updateObj.electric = (Number(existing?.electric) || 0) + amount;
+                        updateObj.electric = amount;
                     } else if (['nước','nuoc','water'].some(k => key.includes(k))) {
-                        updateObj.water = (Number(existing?.water) || 0) + amount;
+                        updateObj.water = amount;
                     } else if (['xe','vehicle','vehicles','xe'].some(k => key.includes(k))) {
-                        updateObj.vehicles = (Number(existing?.vehicles) || 0) + amount;
+                        updateObj.vehicles = amount;
                     } else if (['vệ sinh','vesinh','ve sinh','service','services'].some(k => key.includes(k))) {
-                        updateObj.service = (Number(existing?.service) || 0) + amount;
+                        updateObj.service = amount;
                     }
                 }
 
-                // Attach period: prefer request-specified period (from bulk body), fall back to active config
-                updateObj.period = (req.body && req.body.period) || (config && config.period) || null;
-
                 // Ensure owner is set for this apartment
-                if (!updateObj.owner) updateObj.owner = (existing && existing.owner) || aptRecord.owner_name || '';
+                updateObj.owner = (existing && existing.owner) || (aptRecord && aptRecord.owner_name) || '';
+
+                // Calculate total_due
+                const totalElectric = updateObj.electric !== undefined ? updateObj.electric : (existing?.electric || 0);
+                const totalWater = updateObj.water !== undefined ? updateObj.water : (existing?.water || 0);
+                const totalService = updateObj.service !== undefined ? updateObj.service : (existing?.service || 0);
+                const totalVehicles = updateObj.vehicles !== undefined ? updateObj.vehicles : (existing?.vehicles || 0);
+                const preDebt = existing?.pre_debt || 0;
+                updateObj.total_due = totalElectric + totalWater + totalService + totalVehicles + preDebt;
 
                 const { data: upserted, error: upsertErr } = await this.repo.upsert(updateObj);
                 if (upsertErr) {
@@ -1038,9 +1096,9 @@ class BillController {
                         ownerId,
                         'info',
                         'Số liệu tiêu thụ đã được ghi nhận',
-                        `Số liệu tiêu thụ cho căn hộ ${dbAptId} đã được cập nhật từ import. Tổng cộng thêm: ${addedTotal?.toLocaleString('vi-VN')}đ`,
-                        '/payments',
-                        { apt_id: dbAptId, addedTotal }
+                        `Số liệu tiêu thụ kỳ ${usedPeriod} cho căn hộ ${dbAptId} đã được cập nhật từ hệ thống. Tổng tiền: ${updateObj.total_due?.toLocaleString('vi-VN')} đ.`,
+                        '/bills',
+                        { apt_id: dbAptId, period: usedPeriod, total_due: updateObj.total_due }
                     );
                 }
 
