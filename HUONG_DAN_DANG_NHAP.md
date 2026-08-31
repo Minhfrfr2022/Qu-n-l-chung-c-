@@ -25,11 +25,7 @@ Tài liệu này hướng dẫn cách lấy và quản lý thông tin đăng nh�
 ## 2. Tài khoản Cư dân (User / Resident)
 
 ### 📍 Vị trí lấy thông tin tài khoản Cư dân:
-* **Cơ sở dữ liệu quản lý người dùng:** 
-  Bảng `profiles` và bảng `auth.users` trên **Supabase Dashboard** (các tài khoản có cột `role = 'user'`).
-* **Bảng liên kết căn hộ:** 
-  Bảng `apartments` (cột `owner_id`) và bảng `residents` để xem thông tin cư dân và số phòng tương ứng.
-
+Vào file createTestResidents.js chọn 1 trong 4 người để đăng nhập
 ### 🔑 Cách tạo và đăng nhập tài khoản Cư dân:
 1. **Cách 1: Đăng ký trực tiếp trên giao diện Web**
    - Truy cập trang Đăng nhập (`/login`) $\rightarrow$ Chọn **"Đăng ký tài khoản mới"**.
